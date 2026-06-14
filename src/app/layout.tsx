@@ -1,10 +1,14 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { brandAssetUrl } from '@/lib/brandAssets'
 
 export const metadata: Metadata = {
-  title: 'Any Site on Earth',
-  description: 'Interactive 3D Earth with satellite imagery and 3D scene generation',
-  icons: { icon: '/anysiteonearth_minimal_icon_dark.svg' },
+  title: 'Any Site on Earth | RE8CH',
+  description: 'Any Site on Earth 是 RE8CH 的地理空间产品入口：从坐标连接卫星影像、地形上下文和三维场景。',
+  icons: { icon: brandAssetUrl('/PRODUCTS/anysiteonearth/SVG/icon.svg') },
+  alternates: {
+    canonical: 'https://anysiteonearth.re8ch.com/',
+  },
 }
 
 export default function RootLayout({
@@ -13,7 +17,21 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="zh-CN" data-lang="zh">
+      <head>
+        <meta name="brand-assets-base-url" content={brandAssetUrl('/').replace(/\/$/, '')} />
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-Z0X8KS7NNX"></script>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-Z0X8KS7NNX');
+          `,
+          }}
+        />
+      </head>
       <body className="antialiased">
         {children}
       </body>
