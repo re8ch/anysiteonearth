@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "deploy": "./deploy.sh",
-    "dist:clean": "rm -rf dist out"
+    "dist:clean": "rm -rf dist out",
+    "indexnow:submit": "SITE_URL=https://anysiteonearth.re8ch.com node scripts/submit-indexnow.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^9.111.3",

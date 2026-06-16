@@ -52,3 +52,18 @@ NEXT_PUBLIC_BRAND_ASSETS_BASE_URL=https://zh-brand-assets.re8ch.com
 本仓库保留了原始页面源码（`src/`）与静态交付产物（`dist/`）：
 - `src/`: Next.js 源码（交互地图、地形生成、3D 渲染）
 - `dist/`: 部署到 RE8CH 子站的静态文件
+
+## Product Site Design Compliance
+
+- Next static export emits 27 locale routes for `/<locale>/` and
+  `/<locale>/workspace/`; `/en/` is `x-default`.
+- Each localized route generates canonical metadata, 27 language alternates plus
+  `x-default`, and is included in `/sitemap.xml`.
+- `/robots.txt` points to `https://anysiteonearth.re8ch.com/sitemap.xml`.
+- IndexNow verification is published at
+  `/4790e3784bdc45bf85e11ff304b3868f.txt`; run
+  `npm run indexnow:submit` after deployment to submit sitemap URLs.
+- Shared CDN navigator/footer receive matching `locale`, `language-options`, and
+  `language-mode="available"` so footer language follows navigator language.
+- The root path is a compatibility entry to `/en/`; query-string language
+  switching is no longer canonical.

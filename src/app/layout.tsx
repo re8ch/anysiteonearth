@@ -20,6 +20,10 @@ export default function RootLayout({
     <html lang="zh-CN" data-lang="zh">
       <head>
         <meta name="brand-assets-base-url" content={brandAssetUrl('/').replace(/\/$/, '')} />
+        <link rel="stylesheet" href={`${brandAssetUrl('/').replace(/\/$/, '')}/dist/re8ch-navigator.css?v=20260616-navigator-ui-indexnow-3`} />
+        <link rel="stylesheet" href={`${brandAssetUrl('/').replace(/\/$/, '')}/dist/re8ch-footer.css?v=20260616-footer-backlinks-1`} />
+        <script type="module" src={`${brandAssetUrl('/').replace(/\/$/, '')}/dist/re8ch-navigator.js?v=20260616-navigator-ui-indexnow-3`} />
+        <script type="module" src={`${brandAssetUrl('/').replace(/\/$/, '')}/dist/re8ch-footer.js?v=20260616-footer-backlinks-1`} />
         <script async src="https://www.googletagmanager.com/gtag/js?id=G-Z0X8KS7NNX"></script>
         <script
           dangerouslySetInnerHTML={{
