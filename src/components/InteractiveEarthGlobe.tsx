@@ -324,7 +324,7 @@ function GlobeCamera({
       dampingFactor={0.08}
       enablePan={false}
       enableRotate
-      enableZoom
+      enableZoom={false}
       minDistance={3.85}
       maxDistance={10.6}
       rotateSpeed={0.5}

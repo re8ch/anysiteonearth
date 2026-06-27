@@ -3,7 +3,7 @@ import { absoluteUrl, alternates, productLocales } from '@/lib/productI18n';
 
 export const dynamic = 'force-static';
 
-const segments = ['', 'workspace'] as const;
+const segments = ['', 'workspace', 'account'] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();

@@ -67,3 +67,14 @@ NEXT_PUBLIC_BRAND_ASSETS_BASE_URL=https://zh-brand-assets.re8ch.com
   `language-mode="available"` so footer language follows navigator language.
 - The root path is a compatibility entry to `/en/`; query-string language
   switching is no longer canonical.
+
+## Product Resource Isolation
+
+`infra/product-resources.yaml` records Any Site on Earth's independent Pigsty
+database, Harbor project, Observable space, K3S namespace, and product-local
+account store. Email and phone login stay on the shared RE8CH auth backend.
+From the workspace root, verify all product declarations with:
+
+```bash
+node ops/product-platform/verify-product-tenants.mjs
+```

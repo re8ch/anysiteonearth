@@ -1,0 +1,71 @@
+apiVersion: re8ch.com/v1alpha1
+kind: ProductTenant
+metadata:
+  name: anysite
+  labels:
+    re8ch.com/product: anysite
+    re8ch.com/shared-auth: "true"
+spec:
+  displayName: Any Site on Earth
+  domains:
+    global: https://anysiteonearth.re8ch.com
+    api: https://api.re8ch.com/anysite
+  sharedAuth:
+    backend: https://api.re8ch.com/auth
+    service: anysite
+    loginMethods:
+      - email
+      - phone
+    boundary: Shared login verifies identity only; Any Site on Earth keeps its own workspace and user projection state.
+  pigsty:
+    database: anysite
+    schema: anysite
+    credentialSecret: anysite/anysite-db-credentials
+    postgrest:
+      readWrite: https://db-rw.re8ch.com/anysite
+      readOnly: https://db-ro.re8ch.com/anysite
+    roles:
+      - anysite_owner
+      - anysite_admin
+      - anysite_migrator
+      - anysite_app_rw
+      - anysite_app_ro
+      - anysite_pgrst
+    accountStore:
+      localUserTable: anysite.users
+      identityColumns:
+        provider: external_provider
+        subject: external_subject
+      requiredTables:
+        - users
+        - user_identities
+        - sessions
+        - workspaces
+        - site_assets
+        - audit_events
+      seedAccounts:
+        - email: nuailin@qq.com
+          name: nuailin
+          externalProvider: re8ch-auth
+          externalSubject: email:nuailin@qq.com
+          passwordSecretRef: anysite/anysite-account-seeds:NUAILIN_PASSWORD
+          roles:
+            - owner
+            - user
+  harbor:
+    project: anysite
+    robotPrefix: robot$anysite+
+    imageRoot: registry.re8ch.com/anysite
+  observable:
+    space: anysite
+    grafanaFolder: RE8CH / Any Site on Earth
+    prometheusTenantLabel: re8ch.com/tenant=anysite
+    lokiTenant: anysite
+  k3s:
+    namespace: anysite
+    serviceAccount: anysite
+    runtimeSecret: anysite/anysite-secrets
+    registrySecret: anysite/anysite-registry
+  status:
+    isolation: declared
+    notes: Added because the account page existed but no product-local Pigsty, Harbor, Observable, or K3S tenant declaration was present.

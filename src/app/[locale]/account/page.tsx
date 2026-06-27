@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import type { Metadata } from 'next';
-import AnysiteExperience from '@/components/AnysiteExperience';
+import SharedAccountPanel from '@/components/auth/SharedAccountPanel';
 import {
   absoluteUrl,
   alternates,
@@ -24,25 +24,25 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { locale: rawLocale } = await params;
   const locale = normalizeLocale(rawLocale);
-  const t = copy[locale];
   return {
-    title: `${t.workspace} | Any Site on Earth`,
-    description: t.description,
+    title: `Account | Any Site on Earth`,
+    description: 'Shared RE8CH login for Any Site on Earth.',
     alternates: {
-      canonical: absoluteUrl(locale, 'workspace'),
-      languages: alternates('workspace'),
+      canonical: absoluteUrl(locale, 'account'),
+      languages: alternates('account'),
     },
   };
 }
 
-export default async function LocaleWorkspacePage({ params }: Props) {
+export default async function LocaleAccountPage({ params }: Props) {
   const { locale: rawLocale } = await params;
   const locale = normalizeLocale(rawLocale);
   const t = copy[locale];
-  const languageOptions = navLanguageOptions(locale, 'workspace');
+  const languageOptions = navLanguageOptions(locale, 'account');
   const navLinks = [
     { label: t.workflow, href: `${localizedPath(locale)}#workflow` },
     { label: t.features, href: `${localizedPath(locale)}#features` },
+    { label: t.workspace, href: localizedPath(locale, 'workspace') },
     { label: 'Account', href: localizedPath(locale, 'account') },
     { label: t.contact, href: `${localizedPath(locale)}#contact` },
   ];
@@ -66,7 +66,7 @@ export default async function LocaleWorkspacePage({ params }: Props) {
         'max-width': '1280px',
       })}
       <main>
-        <AnysiteExperience productName="Any Site on Earth" standalone />
+        <SharedAccountPanel />
       </main>
       {createElement('re8ch-footer', {
         'active-product': 'anysite',

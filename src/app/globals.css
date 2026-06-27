@@ -77,6 +77,93 @@ html[data-lang="en"] p.copy-zh {
   min-height: 100svh;
 }
 
+.account-page {
+  padding: clamp(84px, 10vw, 126px) clamp(18px, 5vw, 56px) 48px;
+}
+
+.account-inner {
+  margin: 0 auto;
+  max-width: 1040px;
+}
+
+.account-page h1 {
+  font-size: clamp(42px, 7vw, 78px);
+  line-height: 0.95;
+  margin: 16px 0 0;
+}
+
+.account-lead {
+  color: #26354a;
+  font-size: clamp(19px, 2.5vw, 26px);
+  font-weight: 800;
+  line-height: 1.25;
+  margin: 22px 0 0;
+  max-width: 760px;
+}
+
+.account-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+  margin-top: 30px;
+}
+
+.account-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 22px;
+}
+
+.account-card h2 {
+  font-size: 22px;
+  margin: 0 0 14px;
+}
+
+.account-kv {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.account-kv div {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+  padding-top: 10px;
+}
+
+.account-kv dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.account-kv dd {
+  font-size: 16px;
+  font-weight: 900;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.account-note {
+  background: #eef5ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1d4ed8;
+  font-weight: 900;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+}
+
 .nav {
   align-items: center;
   background: rgba(7, 17, 31, 0.9);
@@ -244,23 +331,23 @@ html[data-lang="en"] p.copy-zh {
 }
 
 .anysite-logo-xs {
-  --logo-size: 28px;
+  --logo-size: 42px;
 }
 
 .anysite-logo-sm {
-  --logo-size: 36px;
+  --logo-size: 54px;
 }
 
 .anysite-logo-md {
-  --logo-size: 56px;
+  --logo-size: 84px;
 }
 
 .anysite-logo-lg {
-  --logo-size: 78px;
+  --logo-size: 117px;
 }
 
 .anysite-logo-xl {
-  --logo-size: 112px;
+  --logo-size: 168px;
 }
 
 .anysite-logo-flat {
@@ -2088,7 +2175,7 @@ h1 {
   }
 
   .experience-brandline .anysite-logo {
-    --logo-size: 42px;
+    --logo-size: 63px;
   }
 
   .experience-brandline strong {

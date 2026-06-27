@@ -2,6 +2,9 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { brandAssetUrl } from '@/lib/brandAssets'
 
+const sharedAssetVersion = '20260627-auth-nav-2'
+const brandAssetsOrigin = brandAssetUrl('/').replace(/\/$/, '')
+
 export const metadata: Metadata = {
   title: 'Any Site on Earth | RE8CH',
   description: 'Any Site on Earth 是 RE8CH 的地理空间产品入口：从坐标连接卫星影像、地形上下文和三维场景。',
@@ -19,11 +22,11 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" data-lang="zh">
       <head>
-        <meta name="brand-assets-base-url" content={brandAssetUrl('/').replace(/\/$/, '')} />
-        <link rel="stylesheet" href={`${brandAssetUrl('/').replace(/\/$/, '')}/dist/re8ch-navigator.css?v=20260616-navigator-ui-indexnow-3`} />
-        <link rel="stylesheet" href={`${brandAssetUrl('/').replace(/\/$/, '')}/dist/re8ch-footer.css?v=20260616-footer-backlinks-1`} />
-        <script type="module" src={`${brandAssetUrl('/').replace(/\/$/, '')}/dist/re8ch-navigator.js?v=20260616-navigator-ui-indexnow-3`} />
-        <script type="module" src={`${brandAssetUrl('/').replace(/\/$/, '')}/dist/re8ch-footer.js?v=20260616-footer-backlinks-1`} />
+        <meta name="brand-assets-base-url" content={brandAssetsOrigin} />
+        <link rel="stylesheet" href={`${brandAssetsOrigin}/dist/re8ch-navigator.css?v=${sharedAssetVersion}`} />
+        <link rel="stylesheet" href={`${brandAssetsOrigin}/dist/re8ch-footer.css?v=${sharedAssetVersion}`} />
+        <script src={`${brandAssetsOrigin}/dist/re8ch-navigator.js?v=${sharedAssetVersion}`}></script>
+        <script src={`${brandAssetsOrigin}/dist/re8ch-footer.js?v=${sharedAssetVersion}`}></script>
         <script async src="https://www.googletagmanager.com/gtag/js?id=G-Z0X8KS7NNX"></script>
         <script
           dangerouslySetInnerHTML={{

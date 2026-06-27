@@ -45,7 +45,14 @@ export default async function LocaleHomePage({ params }: Props) {
     { label: t.workflow, href: `${localizedPath(locale)}#workflow` },
     { label: t.features, href: `${localizedPath(locale)}#features` },
     { label: t.workspace, href: localizedPath(locale, 'workspace') },
+    { label: 'Account', href: localizedPath(locale, 'account') },
     { label: t.contact, href: `${localizedPath(locale)}#contact` },
+  ];
+  const extraActions = [
+    {
+      label: { zh: '登录', en: 'Sign in' },
+      href: `https://api.re8ch.com/auth/start?service=anysite&return_to=${encodeURIComponent(`https://anysiteonearth.re8ch.com${localizedPath(locale, 'account')}`)}`,
+    },
   ];
   const dir = rtlLocales.has(locale) ? 'rtl' : 'ltr';
 
@@ -56,6 +63,7 @@ export default async function LocaleHomePage({ params }: Props) {
         locale,
         'home-href': localizedPath(locale),
         links: JSON.stringify(navLinks),
+        'extra-actions': JSON.stringify(extraActions),
         'language-options': JSON.stringify(languageOptions),
         'language-mode': 'available',
         'max-width': '1280px',

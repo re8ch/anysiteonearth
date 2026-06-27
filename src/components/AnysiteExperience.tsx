@@ -83,7 +83,7 @@ export default function AnysiteExperience({ productName, standalone = false }: A
   const [sceneData, setSceneData] = useState<Scene3DData | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const [status, setStatus] = useState('Drag or zoom the Earth. The center reticle shows the current target.');
+  const [status, setStatus] = useState('Drag the Earth to aim. Use the page scroll to reach more sections.');
 
   const coordLabel = useMemo(() => {
     if (!coordinates) return 'No coordinate selected';
@@ -121,7 +121,7 @@ export default function AnysiteExperience({ productName, standalone = false }: A
   };
 
   const handleUserControlStart = useCallback(() => {
-    setStatus('Globe control active. Aim the reticle, then select the point when it is right.');
+    setStatus('Globe control active. Aim the reticle, then select the point when it is right. Scrolling still moves the page.');
   }, []);
 
   const generateImagery = () => {
@@ -219,8 +219,8 @@ export default function AnysiteExperience({ productName, standalone = false }: A
                   </span>
                   <span className="copy-en">Pick a site on one live Earth.</span>
                 </h1>
-                <p className="copy-zh">像 Google Earth 一样拖拽和缩放地球，用屏幕中心准星瞄准经纬度，再点击选择此处。影像生成和 3D 建模都留在同一套球面视图里。</p>
-                <p className="copy-en">Drag and zoom the Earth, aim with the center reticle, then confirm the point. Imagery and manual 3D modeling stay inside the same spherical workspace.</p>
+                <p className="copy-zh">拖拽地球，用屏幕中心准星瞄准经纬度，再点击选择此处。鼠标滚轮保留给页面滚动，影像生成和 3D 建模都留在同一套球面视图里。</p>
+                <p className="copy-en">Drag the Earth, aim with the center reticle, then confirm the point. Mouse-wheel scrolling stays available for the page while imagery and manual 3D modeling remain in the same spherical workspace.</p>
               </div>
 
               <div className="experience-readouts">
