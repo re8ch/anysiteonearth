@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { brandAssetUrl } from '@/lib/brandAssets'
 
-const sharedAssetVersion = '20260627-auth-nav-2'
 const brandAssetsOrigin = brandAssetUrl('/').replace(/\/$/, '')
 
 export const metadata: Metadata = {
@@ -23,10 +22,10 @@ export default function RootLayout({
     <html lang="zh-CN" data-lang="zh">
       <head>
         <meta name="brand-assets-base-url" content={brandAssetsOrigin} />
-        <link rel="stylesheet" href={`${brandAssetsOrigin}/dist/re8ch-navigator.css?v=${sharedAssetVersion}`} />
-        <link rel="stylesheet" href={`${brandAssetsOrigin}/dist/re8ch-footer.css?v=${sharedAssetVersion}`} />
-        <script src={`${brandAssetsOrigin}/dist/re8ch-navigator.js?v=${sharedAssetVersion}`}></script>
-        <script src={`${brandAssetsOrigin}/dist/re8ch-footer.js?v=${sharedAssetVersion}`}></script>
+        <link rel="stylesheet" href={`${brandAssetsOrigin}/dist/re8ch-navigator.css`} />
+        <link rel="stylesheet" href={`${brandAssetsOrigin}/dist/re8ch-footer.css`} />
+        <script src={`${brandAssetsOrigin}/dist/re8ch-navigator.js`}></script>
+        <script src={`${brandAssetsOrigin}/dist/re8ch-footer.js`}></script>
         <script async src="https://www.googletagmanager.com/gtag/js?id=G-Z0X8KS7NNX"></script>
         <script
           dangerouslySetInnerHTML={{

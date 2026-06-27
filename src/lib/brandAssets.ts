@@ -7,7 +7,7 @@ const brandAssetsRegion = (
 const defaultBrandAssetsBaseUrl =
   brandAssetsRegion === 'zh'
     ? 'https://zh-brand-assets.re8ch.com'
-    : 'https://zh-brand-assets.re8ch.com';
+    : 'https://brand-assets.re8ch.com';
 
 export const brandAssetsBaseUrl = (
   process.env.NEXT_PUBLIC_BRAND_ASSETS_BASE_URL ||
