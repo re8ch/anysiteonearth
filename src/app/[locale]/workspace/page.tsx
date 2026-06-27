@@ -64,6 +64,7 @@ export default async function LocaleWorkspacePage({ params }: Props) {
         'language-options': JSON.stringify(languageOptions),
         'language-mode': 'available',
         'max-width': '1280px',
+        suppressHydrationWarning: true,
       })}
       <main>
         <AnysiteExperience productName="Any Site on Earth" standalone />
@@ -74,6 +75,7 @@ export default async function LocaleWorkspacePage({ params }: Props) {
         'language-options': JSON.stringify(languageOptions),
         'language-mode': 'available',
         'brand-logo': brandAssetUrl('/SVG/logo.svg'),
+        suppressHydrationWarning: true,
       })}
     </div>
   );
