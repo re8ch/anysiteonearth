@@ -337,6 +337,7 @@ def twin_frame(width: int, height: int, route: list[list[float]], active: int,
             color = tuple(round(palette[1][i] * (1-blend) + palette[0][i] * blend)
                           for i in range(3))
             draw.line((0, row, width, row), fill=color + (255,))
+    image = apply_scenario_atmosphere(image, scenario, state)
     draw = ImageDraw.Draw(image, "RGBA")
     def project(item: list[float]) -> tuple[int, int]:
         x = int((item[0]-west) / max(east-west, 1e-9) * width)
@@ -357,12 +358,25 @@ def twin_frame(width: int, height: int, route: list[list[float]], active: int,
     draw.text((55, 112), f"Surface {state['surface']}  Wetness {state['wetness']*100:02.0f}%  "
               f"Drainage {float(state['drainage_risk'] or 0)*100:02.0f}%",
               fill=(199, 222, 208, 255))
-    if scenario == "mist":
-        overlay = Image.new("RGB", image.size, (205, 216, 213)).filter(ImageFilter.GaussianBlur(12))
-        image = Image.blend(image, overlay, 0.24)
-    elif scenario == "after_rain":
-        image = ImageEnhance.Contrast(image).enhance(0.86)
     return image
+
+
+def apply_scenario_atmosphere(image: Image.Image, scenario: str,
+                              state: dict[str, Any]) -> Image.Image:
+    """Apply weather to geography while keeping route and UI overlays crisp."""
+    atmosphere = state.get("atmosphere", {})
+    if scenario == "mist":
+        fog = float(atmosphere.get("fog", 0.75))
+        softened = image.filter(ImageFilter.GaussianBlur(max(1, round(2 + fog * 5))))
+        haze = Image.new("RGB", image.size, (215, 224, 221))
+        return Image.blend(softened, haze, min(0.42, 0.14 + fog * 0.32))
+    if scenario == "after_rain":
+        wetness = float(state.get("wetness", 0.7))
+        subdued = ImageEnhance.Contrast(image).enhance(0.78 + (1 - wetness) * 0.12)
+        subdued = ImageEnhance.Color(subdued).enhance(0.82)
+        cool_reflection = Image.new("RGB", image.size, (63, 88, 100))
+        return Image.blend(subdued, cool_reflection, 0.07 + wetness * 0.11)
+    return ImageEnhance.Contrast(ImageEnhance.Color(image).enhance(1.04)).enhance(1.03)
 
 
 def backdrop_view(backdrop: Image.Image | None, source: tuple[float, float, float, float],

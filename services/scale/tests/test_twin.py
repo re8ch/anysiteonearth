@@ -3,11 +3,12 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from PIL import Image
 
 from scale.config import Settings
 from scale.schemas import TwinCreate
-from scale.twin import (FeatureIndex, TwinCompiler, TwinError, compile_semantic_objects,
-                        fill_elevations, scenario_state)
+from scale.twin import (FeatureIndex, TwinCompiler, TwinError, apply_scenario_atmosphere,
+                        compile_semantic_objects, fill_elevations, scenario_state)
 from scale.twin import render_route_video
 
 
@@ -73,6 +74,16 @@ def test_scenarios_change_temporal_wetness_and_atmosphere():
     assert rain["wetness"] > clear["wetness"]
     assert mist["atmosphere"]["fog"] > clear["atmosphere"]["fog"]
     assert scenario_state("after_rain", 1, 0.4)["wetness"] < rain["wetness"]
+
+
+def test_weather_rendering_visibly_separates_scenarios():
+    source = Image.new("RGB", (24, 24), (80, 150, 90))
+    clear = apply_scenario_atmosphere(source, "clear", scenario_state("clear", 0, 0.4))
+    rain = apply_scenario_atmosphere(source, "after_rain", scenario_state("after_rain", 0, 0.4))
+    mist = apply_scenario_atmosphere(source, "mist", scenario_state("mist", 0, 0.4))
+    assert clear.getpixel((0, 0)) != rain.getpixel((0, 0))
+    assert mist.getpixel((0, 0))[0] > clear.getpixel((0, 0))[0]
+    assert rain.getpixel((0, 0))[1] < clear.getpixel((0, 0))[1]
 
 
 def test_missing_dem_samples_are_deterministically_filled():
