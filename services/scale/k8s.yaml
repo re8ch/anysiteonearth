@@ -29,7 +29,7 @@ spec:
         - {key: dedicated, operator: Equal, value: pg-re8ch, effect: NoSchedule}
       containers:
         - name: api
-          image: registry.re8ch.com/anysite/scale:1.1.6-20260721
+          image: registry.re8ch.com/anysite/scale:1.2.0-20260722
           imagePullPolicy: Never
           args: [uvicorn, scale.api:app, --host, 0.0.0.0, --port, "8000"]
           ports:
@@ -41,6 +41,8 @@ spec:
               valueFrom:
                 secretKeyRef: {name: anysite-db-credentials, key: PGRST_JWT_SECRET}
             - {name: SCALE_EMBEDDED_WORKER, value: "false"}
+            - {name: SCALE_SENTINEL1_COLLECTION, value: "sentinel-1-rtc"}
+            - {name: SCALE_ERA5_URL, value: "https://archive-api.open-meteo.com/v1/archive"}
           readinessProbe:
             httpGet: {path: /healthz, port: http}
           livenessProbe:
@@ -69,7 +71,7 @@ spec:
         - {key: dedicated, operator: Equal, value: pg-re8ch, effect: NoSchedule}
       containers:
         - name: worker
-          image: registry.re8ch.com/anysite/scale:1.1.6-20260721
+          image: registry.re8ch.com/anysite/scale:1.2.0-20260722
           imagePullPolicy: Never
           args: [python, -m, scale.worker]
           env:
@@ -78,6 +80,8 @@ spec:
             - name: SCALE_POSTGREST_JWT_SECRET
               valueFrom:
                 secretKeyRef: {name: anysite-db-credentials, key: PGRST_JWT_SECRET}
+            - {name: SCALE_SENTINEL1_COLLECTION, value: "sentinel-1-rtc"}
+            - {name: SCALE_ERA5_URL, value: "https://archive-api.open-meteo.com/v1/archive"}
           volumeMounts:
             - {name: cache, mountPath: /var/cache/scale}
           resources:

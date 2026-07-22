@@ -797,30 +797,6 @@ class CopernicusDemSource:
                 )
             return output
 
-
-def d8_flow_accumulation(dem: np.ndarray) -> np.ndarray:
-    """Return deterministic single-flow-direction contributing-cell counts."""
-    rows, cols = dem.shape
-    receivers = np.arange(rows * cols, dtype=np.int64)
-    offsets = [(-1, -1), (-1, 0), (-1, 1), (0, -1),
-               (0, 1), (1, -1), (1, 0), (1, 1)]
-    for row in range(rows):
-        for col in range(cols):
-            best, best_drop = row * cols + col, 0.0
-            for dr, dc in offsets:
-                nr, nc = row + dr, col + dc
-                if 0 <= nr < rows and 0 <= nc < cols:
-                    drop = dem[row, col] - dem[nr, nc]
-                    if drop > best_drop:
-                        best, best_drop = nr * cols + nc, drop
-            receivers[row * cols + col] = best
-    accumulation = np.ones(rows * cols, dtype=float)
-    for index in np.argsort(dem.ravel())[::-1]:
-        receiver = receivers[index]
-        if receiver != index:
-            accumulation[receiver] += accumulation[index]
-    return accumulation.reshape(dem.shape)
-
     def contours(self, bbox: BBox, interval_m: int = 20, max_features: int = 350) -> list[dict[str, Any]]:
         """Create lightweight contour approximations from quantized DEM polygons."""
         try:
@@ -875,6 +851,30 @@ def d8_flow_accumulation(dem: np.ndarray) -> np.ndarray:
                         if len(output) >= max_features:
                             return output
         return output
+
+
+def d8_flow_accumulation(dem: np.ndarray) -> np.ndarray:
+    """Return deterministic single-flow-direction contributing-cell counts."""
+    rows, cols = dem.shape
+    receivers = np.arange(rows * cols, dtype=np.int64)
+    offsets = [(-1, -1), (-1, 0), (-1, 1), (0, -1),
+               (0, 1), (1, -1), (1, 0), (1, 1)]
+    for row in range(rows):
+        for col in range(cols):
+            best, best_drop = row * cols + col, 0.0
+            for dr, dc in offsets:
+                nr, nc = row + dr, col + dc
+                if 0 <= nr < rows and 0 <= nc < cols:
+                    drop = dem[row, col] - dem[nr, nc]
+                    if drop > best_drop:
+                        best, best_drop = nr * cols + nc, drop
+            receivers[row * cols + col] = best
+    accumulation = np.ones(rows * cols, dtype=float)
+    for index in np.argsort(dem.ravel())[::-1]:
+        receiver = receivers[index]
+        if receiver != index:
+            accumulation[receiver] += accumulation[index]
+    return accumulation.reshape(dem.shape)
 
 
 def interpolation_points(line: LineString, count: int) -> list[tuple[float, float]]:

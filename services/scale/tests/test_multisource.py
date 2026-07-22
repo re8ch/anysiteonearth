@@ -13,6 +13,7 @@ from scale.sources import (
     SpectralFeatures,
     WeatherFeatures,
     d8_flow_accumulation,
+    CopernicusDemSource,
 )
 
 
@@ -21,6 +22,12 @@ def test_d8_accumulation_routes_cells_to_lowest_outlet():
     accumulation = d8_flow_accumulation(dem)
     assert accumulation[2, 2] == 9
     assert accumulation.min() >= 1
+
+
+def test_dem_source_keeps_contour_and_hydrology_capabilities():
+    source = CopernicusDemSource("https://stac.example")
+    assert callable(source.hydrology)
+    assert callable(source.contours)
 
 
 def test_weather_windows_and_cache_adapter(tmp_path, monkeypatch):
