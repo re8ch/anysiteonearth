@@ -1,6 +1,6 @@
 [project]
 name = "anysite-scale"
-version = "1.2.0"
+version = "1.2.1"
 description = "Scale v1 multi-scale geospatial inference service"
 requires-python = ">=3.11"
 dependencies = [

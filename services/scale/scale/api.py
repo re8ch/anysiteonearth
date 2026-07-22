@@ -50,7 +50,7 @@ async def lifespan(_: FastAPI):
     stop_worker.set()
 
 
-app = FastAPI(title="Anysite Scale", version="1.2.0", lifespan=lifespan)
+app = FastAPI(title="Anysite Scale", version="1.2.1", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -116,7 +116,7 @@ async def upstream_storage_error_handler(_: Request, error: httpx.HTTPError) -> 
 
 @app.get("/healthz")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "1.2.0"}
+    return {"status": "ok", "version": "1.2.1"}
 
 
 @app.post("/v1/analyses", response_model=AnalysisAccepted, status_code=202)

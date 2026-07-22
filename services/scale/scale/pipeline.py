@@ -27,7 +27,7 @@ Progress = Callable[[str, int], None]
 
 
 class ScalePipeline:
-    processing_version = "scale_pipeline_1.2.0"
+    processing_version = "scale_pipeline_1.2.1"
     def __init__(self, settings: Settings) -> None:
         self.osm = OSMSource(
             settings.overpass_endpoints,
