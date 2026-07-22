@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: scale-cache
+  namespace: anysite
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scale-api
+  namespace: anysite
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: scale-api}
+  template:
+    metadata:
+      labels: {app: scale-api}
+    spec:
+      serviceAccountName: anysite-runtime
+      nodeSelector:
+        kubernetes.io/hostname: r640
+      tolerations:
+        - {key: dedicated, operator: Equal, value: pg-re8ch, effect: NoSchedule}
+      containers:
+        - name: api
+          image: registry.re8ch.com/anysite/scale:1.1.6-20260721
+          imagePullPolicy: Never
+          args: [uvicorn, scale.api:app, --host, 0.0.0.0, --port, "8000"]
+          ports:
+            - {name: http, containerPort: 8000}
+          env:
+            - name: SCALE_DATABASE_URL
+              value: http://10.43.70.93:3000
+            - name: SCALE_POSTGREST_JWT_SECRET
+              valueFrom:
+                secretKeyRef: {name: anysite-db-credentials, key: PGRST_JWT_SECRET}
+            - {name: SCALE_EMBEDDED_WORKER, value: "false"}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scale-worker
+  namespace: anysite
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: scale-worker}
+  template:
+    metadata:
+      labels: {app: scale-worker}
+    spec:
+      serviceAccountName: anysite-runtime
+      nodeSelector:
+        kubernetes.io/hostname: r640
+      tolerations:
+        - {key: dedicated, operator: Equal, value: pg-re8ch, effect: NoSchedule}
+      containers:
+        - name: worker
+          image: registry.re8ch.com/anysite/scale:1.1.6-20260721
+          imagePullPolicy: Never
+          args: [python, -m, scale.worker]
+          env:
+            - name: SCALE_DATABASE_URL
+              value: http://10.43.70.93:3000
+            - name: SCALE_POSTGREST_JWT_SECRET
+              valueFrom:
+                secretKeyRef: {name: anysite-db-credentials, key: PGRST_JWT_SECRET}
+          volumeMounts:
+            - {name: cache, mountPath: /var/cache/scale}
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {cpu: "2", memory: 4Gi}
+      volumes:
+        - name: cache
+          persistentVolumeClaim: {claimName: scale-cache}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scale-api
+  namespace: anysite
+spec:
+  selector: {app: scale-api}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: scale-strip-prefix
+  namespace: anysite
+spec:
+  stripPrefix:
+    prefixes:
+      - /anysite/scale
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: scale-api
+  namespace: anysite
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: anysite-scale-strip-prefix@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: api.re8ch.com
+      http:
+        paths:
+          - path: /anysite/scale
+            pathType: Prefix
+            backend:
+              service:
+                name: scale-api
+                port:
+                  name: http
