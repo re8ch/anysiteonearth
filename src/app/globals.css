@@ -2466,13 +2466,30 @@ h1 {
 .scale-kicker { color: #64d2ff; text-transform: uppercase; letter-spacing: .12em; font-size: 11px; font-weight: 700; }
 .scale-run { border: 0; border-radius: 999px; background: #0a84ff; color: #fff; padding: 13px 19px; font-weight: 700; display: flex; gap: 8px; align-items: center; white-space: nowrap; }
 .scale-run:disabled { opacity: .65; }
-.scale-toolbar { max-width: 1500px; margin: 0 auto 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.scale-toolbar button { border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05); color: rgba(255,255,255,.7); padding: 8px 12px; border-radius: 999px; }
-.scale-toolbar button.is-active { background: rgba(10,132,255,.22); color: #fff; border-color: rgba(10,132,255,.6); }
-.scale-toolbar > span { margin-left: auto; color: rgba(235,235,245,.5); font: 12px "SF Mono", monospace; }
-.scale-main { max-width: 1500px; height: calc(100vh - 190px); min-height: 600px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 340px; border: 1px solid rgba(255,255,255,.08); border-radius: 22px; overflow: hidden; background: #101114; }
+.scale-progress-card { max-width: 1500px; margin: 0 auto 14px; padding: 13px 16px; border: 1px solid rgba(10,132,255,.25); border-radius: 16px; background: rgba(10,132,255,.09); }
+.scale-progress-card > div:first-child { display: flex; justify-content: space-between; gap: 12px; }
+.scale-progress-card span { font-size: 13px; font-weight: 700; }.scale-progress-card strong { color: #64d2ff; font: 12px "SF Mono", monospace; }
+.scale-progress-track { height: 4px; margin: 9px 0; overflow: hidden; border-radius: 4px; background: rgba(255,255,255,.09); }
+.scale-progress-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#0a84ff,#64d2ff); transition: width .35s ease; }
+.scale-progress-card p { margin: 0; color: rgba(235,235,245,.58); font-size: 11px; line-height: 1.4; }
+.scale-progress-card.is-complete { border-color: rgba(48,209,88,.25); background: rgba(48,209,88,.07); }
+.scale-control-deck { max-width: 1500px; margin: 0 auto 14px; display: grid; grid-template-columns: 1.35fr .8fr .8fr; gap: 10px; }
+.scale-control-group { padding: 10px 12px; border: 1px solid rgba(255,255,255,.08); border-radius: 15px; background: rgba(255,255,255,.025); }
+.scale-control-group > span { display: block; margin-bottom: 8px; color: rgba(235,235,245,.48); font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+.scale-control-group > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.scale-control-group button { border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05); color: rgba(255,255,255,.68); padding: 7px 11px; border-radius: 999px; font-size: 12px; }
+.scale-control-group button.is-active { background: rgba(10,132,255,.22); color: #fff; border-color: rgba(10,132,255,.65); }
+.scale-control-group button.is-caution { background: rgba(255,159,10,.15); border-color: rgba(255,159,10,.55); }
+.scale-main { max-width: 1500px; height: calc(100vh - 285px); min-height: 600px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 340px; border: 1px solid rgba(255,255,255,.08); border-radius: 22px; overflow: hidden; background: #101114; }
 .scale-map-wrap { position: relative; min-width: 0; }
 .scale-map { width: 100%; height: 100%; background: #161719; }
+.scale-layer-panel { position: absolute; z-index: 800; top: 12px; right: 12px; width: 218px; padding: 11px; border: 1px solid rgba(255,255,255,.14); border-radius: 14px; color: white; background: rgba(10,11,13,.88); box-shadow: 0 12px 32px rgba(0,0,0,.3); backdrop-filter: blur(18px); }
+.scale-layer-panel strong, .scale-layer-panel > span { display: block; }.scale-layer-panel strong { font-size: 12px; margin-bottom: 8px; }.scale-layer-panel > span { margin: 10px 0 6px; color: rgba(255,255,255,.48); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+.scale-layer-modes { display: grid; grid-template-columns: repeat(4,1fr); gap: 4px; }
+.scale-layer-modes button { min-width: 0; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; padding: 6px 3px; color: rgba(255,255,255,.65); background: rgba(255,255,255,.05); font-size: 10px; }
+.scale-layer-modes button.is-active { color: white; border-color: rgba(100,210,255,.6); background: rgba(10,132,255,.28); }.scale-layer-modes button:disabled { opacity: .3; }
+.scale-layer-toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 4px; }
+.scale-layer-toggles label { display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,.7); font-size: 10px; }.scale-layer-toggles input { accent-color: #0a84ff; }
 .scale-inspector { padding: 24px; overflow: auto; border-left: 1px solid rgba(255,255,255,.08); }
 .scale-inspector h2 { margin: 8px 0 18px; font-size: 22px; }
 .scale-score { background: linear-gradient(145deg, rgba(10,132,255,.22), rgba(48,209,88,.08)); border: 1px solid rgba(100,210,255,.2); border-radius: 18px; padding: 18px; display: flex; align-items: baseline; gap: 12px; }
@@ -2515,10 +2532,17 @@ h1 {
 .twin-truth-grid { grid-template-columns: 1fr 1fr; }.twin-truth-grid h3 { display: flex; gap: 7px; align-items: center; font-size: 13px; }
 .twin-truth-grid p { color: rgba(255,255,255,.55); font-size: 11px; }
 @media (max-width: 850px) {
-  .scale-shell { padding: 16px; }
-  .scale-header { align-items: stretch; flex-direction: column; }
+  .scale-shell { padding: 14px 14px calc(18px + env(safe-area-inset-bottom)); }
+  .scale-header { align-items: stretch; flex-direction: column; gap: 14px; margin-bottom: 14px; }
+  .scale-header h1 { font-size: clamp(30px, 9vw, 42px); line-height: 1.04; }
+  .scale-header .scale-run { align-self: flex-start; width: auto; padding: 10px 15px; }
+  .scale-control-deck { grid-template-columns: 1fr; gap: 7px; }
+  .scale-control-group { padding: 9px 10px; }.scale-control-group > span { margin-bottom: 6px; }
+  .scale-main { min-height: 0; border-radius: 18px; }
   .scale-main { height: auto; grid-template-columns: 1fr; }
-  .scale-map-wrap { height: 60vh; }
+  .scale-map-wrap { height: min(58svh, 620px); min-height: 420px; }
+  .scale-layer-panel { top: 10px; right: 10px; width: 196px; }
+  .scale-legend { top: auto; bottom: calc(84px + env(safe-area-inset-bottom)); left: 12px; max-width: 112px; flex-direction: column; gap: 6px; }
   .scale-inspector { border-left: 0; border-top: 1px solid rgba(255,255,255,.08); }
   .twin-state-grid { grid-template-columns: 1fr 1fr; }
   .twin-truth-grid { grid-template-columns: 1fr; }

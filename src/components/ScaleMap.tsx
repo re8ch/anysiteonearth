@@ -1,8 +1,8 @@
 'use client';
 
 import 'leaflet/dist/leaflet.css';
-import { useEffect } from 'react';
-import { GeoJSON, LayersControl, MapContainer, TileLayer, useMap } from 'react-leaflet';
+import { useEffect, useState } from 'react';
+import { GeoJSON, MapContainer, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import {
   ScaleActivity,
@@ -57,21 +57,47 @@ export default function ScaleMap({
   onSelect: (feature: ScaleAnyFeature) => void;
 }) {
   const key = result ? `${result.metadata.generated_at}:${activity}` : activity;
+  const [rasterMode, setRasterMode] = useState<'satellite' | 'ndvi' | 'landcover' | 'terrain'>('satellite');
+  const [showContext, setShowContext] = useState(false);
+  const [showContours, setShowContours] = useState(false);
+  const [showCandidates, setShowCandidates] = useState(false);
+  const [showRoads, setShowRoads] = useState(true);
+  const analysisReady = Boolean(analysisId && result);
 
   return (
     <MapContainer center={[27.59719, 111.826242]} zoom={12} className="scale-map">
-      <LayersControl position="topright">
-        <LayersControl.BaseLayer checked name="卫星影像">
-          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            attribution="Tiles © Esri — analysis geometry uses WGS84" maxZoom={18} />
-        </LayersControl.BaseLayer>
-        {analysisId && <LayersControl.Overlay name={`${season} NDVI`}>
-          <TileLayer url={scaleTileUrl(analysisId, 'seasonal_spectral', season)} opacity={0.62} maxZoom={18} />
-        </LayersControl.Overlay>}
-        {analysisId && <LayersControl.Overlay name="土地覆盖">
-          <TileLayer url={scaleTileUrl(analysisId, 'landcover', season)} opacity={0.55} maxZoom={18} />
-        </LayersControl.Overlay>}
-      {result && <LayersControl.Overlay checked name="村庄与水系">
+      <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        attribution="Tiles © Esri — analysis geometry uses WGS84" maxZoom={18} />
+      {analysisReady && rasterMode === 'ndvi' && <TileLayer
+        url={scaleTileUrl(analysisId!, 'seasonal_spectral', season)} opacity={0.68} maxZoom={18} />}
+      {analysisReady && rasterMode === 'landcover' && <TileLayer
+        url={scaleTileUrl(analysisId!, 'landcover', season)} opacity={0.64} maxZoom={18} />}
+      {analysisReady && rasterMode === 'terrain' && <TileLayer
+        url={scaleTileUrl(analysisId!, 'terrain', season)} opacity={0.88} maxZoom={18} />}
+
+      <div className="scale-layer-panel leaflet-control" onClick={(event) => event.stopPropagation()}>
+        <strong>地图表达</strong>
+        <div className="scale-layer-modes">
+          {([['satellite', '卫星'], ['ndvi', 'NDVI'], ['landcover', '覆盖'], ['terrain', '地形']] as const)
+            .map(([value, label]) => <button type="button" key={value}
+              disabled={value !== 'satellite' && !analysisReady}
+              className={rasterMode === value ? 'is-active' : ''}
+              onClick={() => setRasterMode(value)}>{label}</button>)}
+        </div>
+        <span>分析叠加（可组合）</span>
+        <div className="scale-layer-toggles">
+          <label><input type="checkbox" checked={showRoads} disabled={!result}
+            onChange={(event) => setShowRoads(event.target.checked)} />道路评分</label>
+          <label><input type="checkbox" checked={showCandidates} disabled={!result}
+            onChange={(event) => setShowCandidates(event.target.checked)} />候选廊道</label>
+          <label><input type="checkbox" checked={showContext} disabled={!result}
+            onChange={(event) => setShowContext(event.target.checked)} />村庄水系</label>
+          <label><input type="checkbox" checked={showContours} disabled={!result}
+            onChange={(event) => setShowContours(event.target.checked)} />等高线</label>
+        </div>
+      </div>
+
+      {result && showContext &&
         <GeoJSON
           key={`${key}:context`}
           data={{
@@ -97,12 +123,12 @@ export default function ScaleMap({
             if (name) layer.bindTooltip(name, { direction: 'top' });
           }}
         />
-      </LayersControl.Overlay>}
-      {result?.layers?.contours && <LayersControl.Overlay name="20 米等高线">
+      }
+      {result?.layers?.contours && showContours &&
         <GeoJSON data={result.layers.contours as GeoJSON.GeoJsonObject}
           style={() => ({ color: '#f8fafc', weight: 0.7, opacity: 0.35 })} />
-      </LayersControl.Overlay>}
-      {result?.layers?.candidate_corridors && <LayersControl.Overlay checked name="候选廊道">
+      }
+      {result?.layers?.candidate_corridors && showCandidates &&
         <GeoJSON
           data={result.layers.candidate_corridors as GeoJSON.GeoJsonObject}
           style={(feature) => {
@@ -114,14 +140,14 @@ export default function ScaleMap({
           }}
           onEachFeature={(feature, layer) => layer.on('click', () => onSelect(feature as unknown as ScaleAnyFeature))}
         />
-      </LayersControl.Overlay>}
-      {showExploration && result?.layers?.scenic_loops && <LayersControl.Overlay checked name="探索环线">
+      }
+      {showExploration && result?.layers?.scenic_loops &&
         <GeoJSON data={result.layers.scenic_loops as GeoJSON.GeoJsonObject}
           style={(feature) => ({ color: feature?.properties?.route_type === 'verified_route' ? '#30d158' : '#ff9f0a',
             weight: 5, opacity: 0.85, dashArray: feature?.properties?.navigable ? undefined : '10 7' })}
           onEachFeature={(feature, layer) => layer.on('click', () => onSelect(feature as unknown as ScaleAnyFeature))} />
-      </LayersControl.Overlay>}
-      {result && <LayersControl.Overlay checked name="道路评分">
+      }
+      {result && showRoads &&
         <GeoJSON
           key={key}
           data={result as unknown as GeoJSON.GeoJsonObject}
@@ -142,8 +168,7 @@ export default function ScaleMap({
             layer.on('click', () => onSelect(scaleFeature));
           }}
         />
-      </LayersControl.Overlay>}
-      </LayersControl>
+      }
       <FitResult result={result} />
     </MapContainer>
   );

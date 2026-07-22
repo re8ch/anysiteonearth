@@ -60,6 +60,7 @@ export default function ScaleWorkspace() {
   const [twinResult, setTwinResult] = useState<TripTwinResult | null>(null);
   const [twinScenario, setTwinScenario] = useState<TwinScenario>('clear');
   const running = Boolean(analysisId) && !result && !error;
+  const progressCopy = describeStage(stage, progress);
 
   useEffect(() => {
     const sharedTwinId = new URLSearchParams(window.location.search).get('twin');
@@ -181,26 +182,35 @@ export default function ScaleWorkspace() {
         </button>
       </header>
 
-      <section className="scale-toolbar" aria-label="Activity profile">
-        {activityOptions.map((option) => (
-          <button
-            type="button"
-            key={option.value}
-            className={activity === option.value ? 'is-active' : ''}
-            onClick={() => setActivity(option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
-        {(['winter', 'spring', 'summer', 'autumn'] as ScaleSeason[]).map((value) => (
-          <button type="button" key={value} className={season === value ? 'is-active' : ''}
-            onClick={() => setSeason(value)}>{value}</button>
-        ))}
-        <button type="button" className={showExploration ? 'is-active' : ''}
-          onClick={() => setShowExploration((value) => !value)}>
-          {showExploration ? '探索路线已显示' : '显示探索路线'}
-        </button>
-        <span>{stage}</span>
+      {(running || result) && <section className={`scale-progress-card ${result ? 'is-complete' : ''}`}>
+        <div><span>{result ? '分析完成' : progressCopy.title}</span><strong>{progress}%</strong></div>
+        <div className="scale-progress-track"><i style={{ width: `${progress}%` }} /></div>
+        <p>{result ? '现在可以切换地图表达和分析叠加层。' : progressCopy.detail}</p>
+      </section>}
+
+      <section className="scale-control-deck" aria-label="分析条件">
+        <div className="scale-control-group">
+          <span>① 出行方式</span>
+          <div>{activityOptions.map((option) => (
+            <button type="button" key={option.value}
+              className={activity === option.value ? 'is-active' : ''}
+              onClick={() => setActivity(option.value)}>{option.label}</button>
+          ))}</div>
+        </div>
+        <div className="scale-control-group">
+          <span>② 遥感季节</span>
+          <div>{([['winter', '冬'], ['spring', '春'], ['summer', '夏'], ['autumn', '秋']] as const)
+            .map(([value, label]) => <button type="button" key={value}
+              className={season === value ? 'is-active' : ''}
+              onClick={() => setSeason(value)}>{label}</button>)}</div>
+        </div>
+        <div className="scale-control-group scale-discovery-control">
+          <span>③ 路线范围</span>
+          <div><button type="button" className={showExploration ? 'is-active is-caution' : ''}
+            onClick={() => setShowExploration((value) => !value)}>
+            {showExploration ? '含未验证探索路线' : '仅显示已知道路'}
+          </button></div>
+        </div>
       </section>
 
       {error && (
@@ -271,6 +281,37 @@ export default function ScaleWorkspace() {
       {twinResult && <TripTwinPlayer result={twinResult} />}
     </main>
   );
+}
+
+function describeStage(stage: string, progress: number): { title: string; detail: string } {
+  const sentinelScene = stage.match(/^acquiring_sentinel_2_(\d+)_of_(\d+)$/);
+  if (sentinelScene) {
+    return {
+      title: `正在合成 Sentinel‑2（${sentinelScene[1]}/${sentinelScene[2]}）`,
+      detail: '读取季节影像的云掩膜与光谱波段；场景完成后进度会继续推进。',
+    };
+  }
+  const stages: Record<string, { title: string; detail: string }> = {
+    submitting: { title: '正在创建分析任务', detail: '正在校验范围和数据需求。' },
+    waiting_for_worker: { title: '任务正在排队', detail: '工作节点空闲后会自动开始，无需停留在页面。' },
+    recovering_interrupted_analysis: { title: '正在恢复中断任务', detail: '工作节点已接管上次未完成的分析，将从数据缓存继续。' },
+    acquiring_osm: { title: '正在读取道路网络', detail: '获取 OSM 道路、步道和连接关系。' },
+    acquiring_osm_context: { title: '正在读取地理环境', detail: '获取村庄、建筑、水系与道路障碍。' },
+    acquiring_sentinel_2: { title: '正在准备 Sentinel‑2', detail: '首次运行需读取最多四期季节影像；这一步通常最耗时。' },
+    acquiring_sentinel_1_rtc: { title: '正在分析雷达湿度', detail: '使用 Sentinel‑1 补充多云条件下的地表湿润信息。' },
+    acquiring_weather_context: { title: '正在读取降雨背景', detail: '汇总近期降雨和土壤湿度。' },
+    acquiring_copernicus_dem: { title: '正在读取真实地形', detail: '提取高程、坡度和地形起伏。' },
+    deriving_dem_hydrology: { title: '正在推断排水风险', detail: '计算汇流、低点与涉水风险。' },
+    extracting_landscape_structure: { title: '正在发现景观廊道', detail: '组合耕地、林地、水体和季节稳定性。' },
+    extracting_segment_features: { title: '正在生成路段特征', detail: '把多源数据对齐到每段道路。' },
+    running_baseline_rules_v1_1: { title: '正在计算通行评分', detail: '生成活动适应性、风险和解释。' },
+    serializing_geojson: { title: '正在整理地图结果', detail: '生成可交互道路、候选廊道和环线图层。' },
+    result_cache_hit: { title: '正在读取缓存结果', detail: '相同分析已完成，正在快速载入。' },
+  };
+  return stages[stage] ?? {
+    title: `分析进行中 · ${progress}%`,
+    detail: '后台任务仍在运行，可以离开页面后稍后返回。',
+  };
 }
 
 function CandidateInspector({ properties, targetId, analysisReady, gpsMessage, onUpload }: {
