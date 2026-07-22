@@ -3,7 +3,11 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, Loader2, Map, Satellite, Waves } from 'lucide-react';
-import { getScaleAnalysis, getScaleResult, startScaleAnalysis, submitGpsTrace } from '@/lib/scaleClient';
+import {
+  getScaleAnalysis, getScaleResult, getTripTwin, getTripTwinResult, startScaleAnalysis,
+  startTripTwin, submitGpsTrace,
+} from '@/lib/scaleClient';
+import TripTwinPlayer from '@/components/TripTwinPlayer';
 import {
   Region,
   ScaleActivity,
@@ -13,6 +17,8 @@ import {
   ScaleRouteProperties,
   ScaleRoadProperties,
   ScaleSeason,
+  TripTwinResult,
+  TwinScenario,
 } from '@/types';
 
 const ScaleMap = dynamic(() => import('@/components/ScaleMap'), { ssr: false });
@@ -49,6 +55,10 @@ export default function ScaleWorkspace() {
   const [showExploration, setShowExploration] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [gpsMessage, setGpsMessage] = useState<string | null>(null);
+  const [twinId, setTwinId] = useState<string | null>(null);
+  const [twinStage, setTwinStage] = useState<string | null>(null);
+  const [twinResult, setTwinResult] = useState<TripTwinResult | null>(null);
+  const [twinScenario, setTwinScenario] = useState<TwinScenario>('clear');
   const running = Boolean(analysisId) && !result && !error;
 
   useEffect(() => {
@@ -74,6 +84,28 @@ export default function ScaleWorkspace() {
     }, 1600);
     return () => window.clearInterval(timer);
   }, [analysisId, error, result]);
+
+  useEffect(() => {
+    if (!twinId || twinResult) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const twin = await getTripTwin(twinId);
+        setTwinStage(`${twin.stage} · ${twin.progress}%`);
+        if (twin.status === 'completed') {
+          setTwinResult(await getTripTwinResult(twinId));
+          setTwinStage('completed');
+          window.clearInterval(timer);
+        } else if (twin.status === 'failed') {
+          setTwinStage(twin.error?.message ?? '路线孪生生成失败');
+          window.clearInterval(timer);
+        }
+      } catch (requestError) {
+        setTwinStage(requestError instanceof Error ? requestError.message : '路线孪生服务不可用');
+        window.clearInterval(timer);
+      }
+    }, 1600);
+    return () => window.clearInterval(timer);
+  }, [twinId, twinResult]);
 
   const selectedScore = useMemo(() => {
     if (!selected) return null;
@@ -110,6 +142,20 @@ export default function ScaleWorkspace() {
       setResult(await getScaleResult(analysisId));
     } catch (requestError) {
       setGpsMessage(requestError instanceof Error ? requestError.message : 'GPS 轨迹提交失败');
+    }
+  };
+
+  const createTwin = async (routeId: string) => {
+    if (!analysisId) return;
+    setTwinId(null);
+    setTwinResult(null);
+    setTwinStage('正在提交路线孪生…');
+    try {
+      const accepted = await startTripTwin(analysisId, routeId, twinScenario);
+      setTwinId(accepted.twin_id);
+      setTwinStage(accepted.stage);
+    } catch (requestError) {
+      setTwinStage(requestError instanceof Error ? requestError.message : '路线孪生提交失败');
     }
   };
 
@@ -196,7 +242,9 @@ export default function ScaleWorkspace() {
               targetId={String(selected.id)} analysisReady={Boolean(analysisId)}
               gpsMessage={gpsMessage} onUpload={uploadGps} />
           ) : selected && 'route_type' in selected.properties ? (
-            <RouteInspector properties={selected.properties as ScaleRouteProperties} />
+            <RouteInspector properties={selected.properties as ScaleRouteProperties}
+              routeId={String(selected.id)} scenario={twinScenario} twinStage={twinStage}
+              onScenario={setTwinScenario} onCreate={createTwin} />
           ) : (
             <div className="scale-empty">
               <Map size={24} />
@@ -212,6 +260,7 @@ export default function ScaleWorkspace() {
           )}
         </aside>
       </section>
+      {twinResult && <TripTwinPlayer result={twinResult} />}
     </main>
   );
 }
@@ -270,7 +319,14 @@ async function parseGpsFile(file: File): Promise<GeoJSON.LineString> {
   return geometry as GeoJSON.LineString;
 }
 
-function RouteInspector({ properties }: { properties: ScaleRouteProperties }) {
+function RouteInspector({ properties, routeId, scenario, twinStage, onScenario, onCreate }: {
+  properties: ScaleRouteProperties;
+  routeId: string;
+  scenario: TwinScenario;
+  twinStage: string | null;
+  onScenario: (value: TwinScenario) => void;
+  onCreate: (routeId: string) => Promise<void>;
+}) {
   return <>
     <span className="scale-kicker">Scenic route</span>
     <h2>{properties.route_type} · {properties.route_shape}</h2>
@@ -284,5 +340,18 @@ function RouteInspector({ properties }: { properties: ScaleRouteProperties }) {
     </dl>
     <div className="scale-evidence"><h3>推荐依据</h3>
       {properties.explanations.map((value) => <p key={value}>{value}</p>)}</div>
+    <div className="twin-create">
+      <h3>路线数字孪生</h3>
+      <div className="twin-scenarios">
+        {([['clear', '晴朗'], ['after_rain', '雨后'], ['mist', '雾天']] as const).map(([value, label]) =>
+          <button type="button" key={value} className={scenario === value ? 'is-active' : ''}
+            onClick={() => onScenario(value)}>{label}</button>)}
+      </div>
+      <button type="button" className="scale-run" onClick={() => void onCreate(routeId)}
+        disabled={Boolean(twinStage && twinStage !== 'completed' && !twinStage.includes('失败'))}>
+        <Satellite size={16} />生成鸟瞰 + 伴随路线孪生
+      </button>
+      {twinStage && <p className="twin-stage">{twinStage}</p>}
+    </div>
   </>;
 }

@@ -191,3 +191,38 @@ export type ScaleAnyFeature =
   | ScaleFeature
   | ScaleGeoJsonLayer<ScaleCandidateProperties>['features'][number]
   | ScaleGeoJsonLayer<ScaleRouteProperties>['features'][number];
+
+export type TwinScenario = 'clear' | 'after_rain' | 'mist';
+export type TwinCameraMode = 'aerial' | 'follow';
+
+export interface TripTwinKeyframe {
+  index: number;
+  fraction: number;
+  position: [number, number, number];
+  eta: string;
+  speed_kmh: number;
+  surface: string;
+  landcover: string;
+  wetness: number;
+  drainage_risk: number;
+  atmosphere: { cloud: number; fog: number; rain: number };
+  provenance: Record<string, string>;
+}
+
+export interface TripTwinResult {
+  manifest: {
+    type: 'TripTwin';
+    version: string;
+    twin_id: string;
+    scenario: TwinScenario;
+    duration_seconds: number;
+    keyframes: TripTwinKeyframe[];
+    camera_tracks: Record<TwinCameraMode, Array<Record<string, unknown>>>;
+    objects: Array<{ id: string; kind: string; provenance: string }>;
+  };
+  assets: {
+    scene: string;
+    preview_720p: Partial<Record<TwinCameraMode, string>>;
+    export_1080p: Partial<Record<TwinCameraMode, string>>;
+  };
+}

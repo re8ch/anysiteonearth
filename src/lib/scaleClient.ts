@@ -3,6 +3,9 @@ import {
   ScaleActivity,
   ScaleAnalysisStatus,
   ScaleFeatureCollection,
+  TripTwinResult,
+  TwinCameraMode,
+  TwinScenario,
 } from '@/types';
 
 const SCALE_API_BASE =
@@ -11,6 +14,39 @@ const SCALE_API_BASE =
 
 export function scaleTileUrl(id: string, layer: string, season: string): string {
   return `${SCALE_API_BASE}/v1/analyses/${id}/tiles/${layer}/${season}/{z}/{x}/{y}.png`;
+}
+
+export function scaleAssetUrl(path: string): string {
+  return path.startsWith('http') ? path : `${SCALE_API_BASE}${path}`;
+}
+
+export async function startTripTwin(analysisId: string, routeId: string,
+  scenario: TwinScenario = 'clear'): Promise<{ twin_id: string; status: ScaleAnalysisStatus; stage: string }> {
+  return parseResponse(await fetch(`${SCALE_API_BASE}/v1/twins`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ analysis_id: analysisId, route_id: routeId, scenario,
+      average_speed_kmh: 14, camera_modes: ['aerial', 'follow'] satisfies TwinCameraMode[],
+      export_1080p: true }),
+  }));
+}
+
+export interface TripTwinStatus {
+  twin_id: string;
+  status: ScaleAnalysisStatus;
+  stage: string;
+  progress: number;
+  created_at: string;
+  updated_at: string;
+  error?: ScaleAnalysis['error'];
+  result?: TripTwinResult | null;
+}
+
+export async function getTripTwin(id: string): Promise<TripTwinStatus> {
+  return parseResponse(await fetch(`${SCALE_API_BASE}/v1/twins/${id}`));
+}
+
+export async function getTripTwinResult(id: string): Promise<TripTwinResult> {
+  return parseResponse(await fetch(`${SCALE_API_BASE}/v1/twins/${id}/result`));
 }
 
 export interface ScaleAnalysis {
