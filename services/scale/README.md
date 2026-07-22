@@ -1,10 +1,27 @@
-# Scale v1.1
+# Scale v1.2
 
 Scale scores known rural roads and discovers evidence-labelled field-edge,
 riparian and forest-gap corridors using OSM, Sentinel-2, ESA WorldCover and
 Copernicus DEM. It also proposes 8–25 km verified and exploratory scenic routes.
 The Yangshi pilot remains a 10 m landscape analysis: candidates are always
 `inferred_unverified` until GPS or human evidence supports them.
+
+v1.2 also fuses Sentinel-1 RTC wetness time series, ERA5-Land/GPM antecedent
+rainfall, GLO-30 hydrology derivatives and OSM access/obstacle tags. GPS traces
+can verify roads, candidate corridors and loops; raw traces remain private by
+default and results expose aggregate evidence only.
+
+Optional source settings:
+
+```env
+SCALE_SENTINEL1_COLLECTION=sentinel-1-rtc
+SCALE_ERA5_URL=https://archive-api.open-meteo.com/v1/archive
+# Optional normalized/authenticated GPM gateway; empty means ERA5-Land only.
+SCALE_GPM_URL=
+SCALE_WEATHER_CACHE_TTL_HOURS=24
+```
+
+Weather values are regional evidence, not segment-scale measurements.
 
 ## Local run
 

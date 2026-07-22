@@ -2,9 +2,10 @@ import json
 from pathlib import Path
 
 import httpx
+from shapely.geometry import LineString
 
 from scale.schemas import BBox
-from scale.sources import OSMSource
+from scale.sources import OSMSource, RoadSegment, attach_osm_transport_context
 
 
 def bbox() -> BBox:
@@ -89,3 +90,15 @@ def test_way_is_clipped_to_aoi(monkeypatch, tmp_path: Path):
     assert all(111.81 <= x <= 111.84 and 27.58 <= y <= 27.61
                for segment in segments for x, y in segment.geometry.coords)
     assert "footway" in source._road_query(bbox())
+
+
+def test_standalone_barrier_is_attached_to_nearby_road():
+    segment = RoadSegment("osm:1", LineString([(111.82, 27.59), (111.821, 27.59)]),
+                          {"highway": "track"})
+    context = [{"type": "Feature", "geometry": {"type": "Point",
+                "coordinates": [111.8205, 27.59002]}, "properties": {
+                    "feature_kind": "transport_obstacle",
+                    "osm_tags": {"barrier": "gate", "access": "private"}}}]
+    attach_osm_transport_context([segment], context)
+    assert segment.tags["barrier"] == "gate"
+    assert segment.tags["access"] == "private"

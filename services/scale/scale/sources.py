@@ -12,6 +12,7 @@ import httpx
 import numpy as np
 from pyproj import Transformer
 from shapely.geometry import GeometryCollection, LineString, MultiLineString, Point, Polygon, box, mapping
+from shapely.ops import transform as shapely_transform
 
 from .schemas import BBox, Evidence
 
@@ -39,6 +40,40 @@ class SpectralFeatures:
     evidence: Evidence | None = None
     warning: str | None = None
     scene_dates: tuple[str, ...] = ()
+
+
+@dataclass
+class RadarFeatures:
+    vv_db: float | None = None
+    vh_db: float | None = None
+    vv_vh_ratio_db: float | None = None
+    wetness_anomaly: float | None = None
+    valid_fraction: float = 0
+    evidence: Evidence | None = None
+    warning: str | None = None
+    scene_dates: tuple[str, ...] = ()
+
+
+@dataclass
+class WeatherFeatures:
+    rain_24h_mm: float | None = None
+    rain_3d_mm: float | None = None
+    rain_7d_mm: float | None = None
+    rain_30d_mm: float | None = None
+    soil_moisture: float | None = None
+    days_since_heavy_rain: int | None = None
+    evidence: tuple[Evidence, ...] = ()
+    warning: str | None = None
+
+
+@dataclass
+class HydrologyFeatures:
+    flow_accumulation: float | None = None
+    twi: float | None = None
+    relative_drainage_height_m: float | None = None
+    drainage_crossing_risk: float | None = None
+    low_point_fraction: float | None = None
+    evidence: Evidence | None = None
 
 
 class OSMSource:
@@ -87,6 +122,9 @@ class OSMSource:
           nwr["place"~"^(village|hamlet|isolated_dwelling)$"]
              ({bbox.south},{bbox.west},{bbox.north},{bbox.east});
           way["building"]({bbox.south},{bbox.west},{bbox.north},{bbox.east});
+          nwr["barrier"]({bbox.south},{bbox.west},{bbox.north},{bbox.east});
+          nwr["ford"]({bbox.south},{bbox.west},{bbox.north},{bbox.east});
+          nwr["man_made"="culvert"]({bbox.south},{bbox.west},{bbox.north},{bbox.east});
         );
         out tags center geom;
         """
@@ -217,6 +255,10 @@ class OSMSource:
             elif tags.get("waterway") and len(geometry) >= 2:
                 shaped = LineString([(point["lon"], point["lat"]) for point in geometry])
                 kind = "waterway"
+            elif tags.get("barrier") or tags.get("ford") or tags.get("man_made") == "culvert":
+                center = element.get("center") or element
+                if "lon" in center and "lat" in center:
+                    kind, shaped = "transport_obstacle", Point(center["lon"], center["lat"])
             if shaped is None or shaped.is_empty:
                 continue
             clipped = shaped if kind == "place" else shaped.intersection(aoi)
@@ -233,12 +275,45 @@ class OSMSource:
                         "osm_tags": {
                             key: value
                             for key, value in tags.items()
-                            if key in {"place", "waterway", "natural", "building"}
+                            if key in {"place", "waterway", "natural", "building", "barrier",
+                                       "ford", "man_made", "access", "motor_vehicle", "bicycle", "foot"}
                         },
                     },
                 }
             )
         return features
+
+
+def attach_osm_transport_context(segments: Iterable[RoadSegment],
+                                 context_features: list[dict[str, Any]],
+                                 max_distance_m: float = 30) -> None:
+    """Attach nearby standalone OSM barriers/fords/culverts to road segment tags."""
+    project = Transformer.from_crs("EPSG:4326", "EPSG:32649", always_xy=True).transform
+    obstacles = []
+    for feature in context_features:
+        properties = feature.get("properties", {})
+        if properties.get("feature_kind") != "transport_obstacle":
+            continue
+        obstacles.append((shapely_transform(project, shape_geometry(feature["geometry"])),
+                          properties.get("osm_tags", {})))
+    for segment in segments:
+        metric = shapely_transform(project, segment.geometry)
+        nearby = [tags for geometry, tags in obstacles if metric.distance(geometry) <= max_distance_m]
+        for tags in nearby:
+            if tags.get("barrier"):
+                segment.tags.setdefault("barrier", tags["barrier"])
+            if tags.get("ford"):
+                segment.tags.setdefault("ford", tags["ford"])
+            if tags.get("man_made") == "culvert":
+                segment.tags.setdefault("culvert", "yes")
+            for key in ("access", "motor_vehicle", "bicycle", "foot"):
+                if tags.get(key):
+                    segment.tags.setdefault(key, tags[key])
+
+
+def shape_geometry(geometry: dict[str, Any]) -> Any:
+    from shapely.geometry import shape
+    return shape(geometry)
 
 
 def clipped_lines(geometry: Any) -> list[LineString]:
@@ -411,6 +486,144 @@ class Sentinel2Source:
         return output
 
 
+class Sentinel1RtcSource:
+    """Sample terrain-corrected Sentinel-1 VV/VH time series along road segments."""
+
+    def __init__(self, stac_url: str, collection: str = "sentinel-1-rtc") -> None:
+        self.stac_url = stac_url
+        self.collection = collection
+
+    def sample(self, bbox: BBox, segments: Iterable[RoadSegment], start: date,
+               end: date) -> dict[str, RadarFeatures]:
+        try:
+            import planetary_computer
+            import rasterio
+            from pystac_client import Client
+        except ImportError as error:
+            raise SourceError("SENTINEL1_DEPENDENCY_MISSING", str(error), False) from error
+        segment_list = list(segments)
+        items = list(Client.open(self.stac_url).search(
+            collections=[self.collection], bbox=[bbox.west, bbox.south, bbox.east, bbox.north],
+            datetime=f"{start.isoformat()}/{end.isoformat()}", max_items=24,
+        ).items())
+        items = sorted((item for item in items if getattr(item, "datetime", None)),
+                       key=lambda item: item.datetime, reverse=True)[:8]
+        if not items:
+            raise SourceError("SENTINEL1_EMPTY", "No Sentinel-1 RTC scenes cover the AOI", False)
+        samples = {segment.segment_id: {"vv": [], "vh": [], "dates": []}
+                   for segment in segment_list}
+        positions = {segment.segment_id: interpolation_points(segment.geometry, 5)
+                     for segment in segment_list}
+        for unsigned in items:
+            item = planetary_computer.sign(unsigned)
+            asset_keys = {key.lower(): key for key in item.assets}
+            if "vv" not in asset_keys or "vh" not in asset_keys:
+                continue
+            for band in ("vv", "vh"):
+                with rasterio.open(item.assets[asset_keys[band]].href) as dataset:
+                    project = Transformer.from_crs("EPSG:4326", dataset.crs, always_xy=True)
+                    for segment_id, points in positions.items():
+                        coordinates = [project.transform(*point) for point in points]
+                        values = np.asarray([value[0] for value in dataset.sample(coordinates)], dtype=float)
+                        valid = np.isfinite(values) & (values > 0)
+                        if valid.any():
+                            # RTC assets are normally linear power; normalize to dB.
+                            samples[segment_id][band].append(10 * np.log10(values[valid]))
+            for segment_id in samples:
+                if samples[segment_id]["vv"] and item.datetime:
+                    samples[segment_id]["dates"].append(item.datetime.isoformat())
+        output: dict[str, RadarFeatures] = {}
+        for segment in segment_list:
+            value = samples[segment.segment_id]
+            if not value["vv"] or not value["vh"]:
+                output[segment.segment_id] = RadarFeatures(warning="No valid dual-pol RTC samples")
+                continue
+            vv_scenes = np.asarray([np.median(scene) for scene in value["vv"]])
+            vh_scenes = np.asarray([np.median(scene) for scene in value["vh"]])
+            latest = float(vv_scenes[0])
+            baseline = float(np.median(vv_scenes[1:])) if len(vv_scenes) > 1 else latest
+            anomaly = float(np.clip((latest - baseline) / 6, -1, 1))
+            quality = min(1.0, len(vv_scenes) / 4)
+            output[segment.segment_id] = RadarFeatures(
+                vv_db=float(np.median(vv_scenes)), vh_db=float(np.median(vh_scenes)),
+                vv_vh_ratio_db=float(np.median(vv_scenes - vh_scenes)),
+                wetness_anomaly=anomaly, valid_fraction=quality,
+                evidence=Evidence(source="Sentinel-1 RTC VV/VH time series",
+                    observed_at=max(value["dates"]) if value["dates"] else None,
+                    native_resolution_m=10, license="Copernicus free, full and open", quality=quality),
+                scene_dates=tuple(sorted(value["dates"])),
+            )
+        return output
+
+
+class RainfallSource:
+    """AOI-scale antecedent rainfall/soil-moisture context with disk caching.
+
+    The default Open-Meteo archive endpoint exposes reanalysis-backed hourly values.
+    A configured GPM endpoint may return the same normalized JSON fields and is merged as
+    independent precipitation evidence.
+    """
+
+    def __init__(self, era5_url: str, gpm_url: str, cache_dir: Path,
+                 timeout: float = 45, cache_ttl_hours: int = 24) -> None:
+        self.era5_url, self.gpm_url, self.timeout = era5_url, gpm_url, timeout
+        self.cache_dir = cache_dir
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_ttl_seconds = cache_ttl_hours * 3600
+
+    def _fetch(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
+        key = hashlib.sha256((url + json.dumps(params, sort_keys=True)).encode()).hexdigest()
+        path = self.cache_dir / f"{key}.json"
+        if path.exists() and time.time() - path.stat().st_mtime <= self.cache_ttl_seconds:
+            return json.loads(path.read_text())
+        response = httpx.get(url, params=params, timeout=self.timeout,
+                             headers={"User-Agent": "Anysite-Scale/0.3"})
+        response.raise_for_status()
+        payload = response.json()
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload), encoding="utf-8")
+        temporary.replace(path)
+        return payload
+
+    def sample(self, bbox: BBox, end: date) -> WeatherFeatures:
+        center_lat = (bbox.south + bbox.north) / 2
+        center_lon = (bbox.west + bbox.east) / 2
+        start = end.fromordinal(end.toordinal() - 30)
+        params = {"latitude": center_lat, "longitude": center_lon,
+                  "start_date": start.isoformat(), "end_date": end.isoformat(),
+                  "hourly": "precipitation,soil_moisture_0_to_7cm", "timezone": "UTC",
+                  "models": "era5_land"}
+        try:
+            payload = self._fetch(self.era5_url, params)
+            hourly = payload.get("hourly", {})
+            rain = np.asarray([value or 0 for value in hourly.get("precipitation", [])], dtype=float)
+            soil = np.asarray([value for value in hourly.get("soil_moisture_0_to_7cm", [])
+                               if value is not None], dtype=float)
+            if rain.size == 0:
+                raise ValueError("weather response contains no precipitation values")
+            daily = [float(rain[max(0, len(rain) - hours):].sum())
+                     for hours in (24, 72, 168, 720)]
+            heavy = np.where(rain >= 10)[0]
+            days_since = int((len(rain) - 1 - heavy[-1]) // 24) if heavy.size else None
+            evidence = [Evidence(source="ERA5-Land reanalysis via Open-Meteo",
+                observed_at=end.isoformat(), native_resolution_m=9000,
+                license="CC BY 4.0; ECMWF attribution required", quality=0.65)]
+            # Optional normalized GPM service improves precipitation evidence without
+            # making authenticated NASA downloads mandatory for local development.
+            if self.gpm_url:
+                gpm = self._fetch(self.gpm_url, params)
+                gpm_values = np.asarray(gpm.get("precipitation", []), dtype=float)
+                if gpm_values.size:
+                    for index, hours in enumerate((24, 72, 168, 720)):
+                        daily[index] = float((daily[index] + gpm_values[-hours:].sum()) / 2)
+                    evidence.append(Evidence(source="NASA GPM IMERG", observed_at=end.isoformat(),
+                        native_resolution_m=10000, license="NASA open data", quality=0.75))
+            return WeatherFeatures(*daily, soil_moisture=float(np.mean(soil)) if soil.size else None,
+                                   days_since_heavy_rain=days_since, evidence=tuple(evidence))
+        except Exception as error:
+            raise SourceError("WEATHER_UNAVAILABLE", str(error), True) from error
+
+
 def select_seasonal_items(items: list[Any], max_scenes: int = 4) -> list[Any]:
     """Choose low-cloud scenes across seasons and always retain the newest scene."""
     dated = [item for item in items if getattr(item, "datetime", None) is not None]
@@ -509,6 +722,104 @@ class CopernicusDemSource:
         finally:
             for dataset in datasets:
                 dataset.close()
+
+    def hydrology(self, bbox: BBox, segments: Iterable[RoadSegment]) -> dict[str, HydrologyFeatures]:
+        """Derive drainage proxies from a hydrologically conditioned local DEM window.
+
+        Flow accumulation uses D8 routing. TWI and relative drainage height are regional
+        proxies at GLO-30 scale and are deliberately exposed with their source resolution.
+        """
+        try:
+            import planetary_computer
+            import rasterio
+            from pystac_client import Client
+        except ImportError as error:
+            raise SourceError("DEM_DEPENDENCY_MISSING", str(error), False) from error
+        item = next(iter(Client.open(self.stac_url).search(
+            collections=["cop-dem-glo-30"], bbox=[bbox.west, bbox.south, bbox.east, bbox.north],
+            max_items=1).items()), None)
+        if item is None:
+            raise SourceError("DEM_EMPTY", "No DEM available for hydrology", False)
+        item = planetary_computer.sign(item)
+        with rasterio.open(item.assets["data"].href) as dataset:
+            project = Transformer.from_crs("EPSG:4326", dataset.crs, always_xy=True)
+            left, bottom = project.transform(bbox.west, bbox.south)
+            right, top = project.transform(bbox.east, bbox.north)
+            window = rasterio.windows.from_bounds(min(left, right), min(bottom, top),
+                max(left, right), max(bottom, top), transform=dataset.transform).round_offsets().round_lengths()
+            scale = max(1, int(max(window.width, window.height) / 900))
+            height, width = max(3, int(window.height / scale)), max(3, int(window.width / scale))
+            dem = dataset.read(1, window=window, out_shape=(height, width),
+                               resampling=rasterio.enums.Resampling.bilinear).astype(float)
+            affine = dataset.window_transform(window) * dataset.transform.scale(
+                window.width / width, window.height / height)
+            valid = np.isfinite(dem) & (dem > -1000)
+            if not valid.any():
+                raise SourceError("DEM_EMPTY", "DEM hydrology window has no valid pixels", False)
+            dem[~valid] = np.nanmedian(dem[valid])
+            pixel_m = max(abs(affine.a), abs(affine.e), 30)
+            gy, gx = np.gradient(dem, pixel_m)
+            slope = np.hypot(gx, gy)
+            accumulation = d8_flow_accumulation(dem)
+            twi = np.log((accumulation + 1) * pixel_m / np.maximum(slope, 0.01))
+            drainage_mask = accumulation >= np.percentile(accumulation[valid], 92)
+            drainage_level = np.where(drainage_mask, dem, np.nan)
+            fallback_level = float(np.percentile(dem[valid], 20))
+            # Local minimum filtering approximates height above nearby drainage without scipy.
+            local_drainage = np.full_like(dem, fallback_level)
+            radius = max(1, min(8, int(250 / pixel_m)))
+            ys, xs = np.where(drainage_mask)
+            for row, col in zip(ys, xs):
+                r0, r1 = max(0, row - radius), min(height, row + radius + 1)
+                c0, c1 = max(0, col - radius), min(width, col + radius + 1)
+                local_drainage[r0:r1, c0:c1] = np.minimum(
+                    local_drainage[r0:r1, c0:c1], drainage_level[row, col])
+            hand = np.maximum(0, dem - local_drainage)
+            output: dict[str, HydrologyFeatures] = {}
+            for segment in segments:
+                coords = [project.transform(*point) for point in interpolation_points(segment.geometry, 9)]
+                indices = [rasterio.transform.rowcol(affine, *coordinate) for coordinate in coords]
+                indices = [(row, col) for row, col in indices if 0 <= row < height and 0 <= col < width]
+                if not indices:
+                    continue
+                acc = np.asarray([accumulation[row, col] for row, col in indices])
+                wet = np.asarray([twi[row, col] for row, col in indices])
+                rel = np.asarray([hand[row, col] for row, col in indices])
+                crossing = float(np.mean((acc >= np.percentile(accumulation[valid], 90)) & (rel < 5)))
+                output[segment.segment_id] = HydrologyFeatures(
+                    flow_accumulation=float(np.max(acc)), twi=float(np.mean(wet)),
+                    relative_drainage_height_m=float(np.mean(rel)),
+                    drainage_crossing_risk=float(np.clip(crossing * 1.5, 0, 1)),
+                    low_point_fraction=float(np.mean(rel < 5)),
+                    evidence=Evidence(source="Copernicus DEM GLO-30 hydrology derivatives",
+                        observed_at=None, native_resolution_m=30,
+                        license="Copernicus DEM license", quality=0.62),
+                )
+            return output
+
+
+def d8_flow_accumulation(dem: np.ndarray) -> np.ndarray:
+    """Return deterministic single-flow-direction contributing-cell counts."""
+    rows, cols = dem.shape
+    receivers = np.arange(rows * cols, dtype=np.int64)
+    offsets = [(-1, -1), (-1, 0), (-1, 1), (0, -1),
+               (0, 1), (1, -1), (1, 0), (1, 1)]
+    for row in range(rows):
+        for col in range(cols):
+            best, best_drop = row * cols + col, 0.0
+            for dr, dc in offsets:
+                nr, nc = row + dr, col + dc
+                if 0 <= nr < rows and 0 <= nc < cols:
+                    drop = dem[row, col] - dem[nr, nc]
+                    if drop > best_drop:
+                        best, best_drop = nr * cols + nc, drop
+            receivers[row * cols + col] = best
+    accumulation = np.ones(rows * cols, dtype=float)
+    for index in np.argsort(dem.ravel())[::-1]:
+        receiver = receivers[index]
+        if receiver != index:
+            accumulation[receiver] += accumulation[index]
+    return accumulation.reshape(dem.shape)
 
     def contours(self, bbox: BBox, interval_m: int = 20, max_features: int = 350) -> list[dict[str, Any]]:
         """Create lightweight contour approximations from quantized DEM polygons."""

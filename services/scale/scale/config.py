@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     overpass_retries: int = 2
     overpass_cache_ttl_hours: int = 168
     stac_url: str = "https://planetarycomputer.microsoft.com/api/stac/v1"
+    sentinel1_collection: str = "sentinel-1-rtc"
+    era5_url: str = "https://archive-api.open-meteo.com/v1/archive"
+    gpm_url: str = ""
+    weather_cache_ttl_hours: int = 24
     request_timeout_seconds: float = 45.0
     max_segments: int = 2500
     high_resolution_cog_urls: str = ""
