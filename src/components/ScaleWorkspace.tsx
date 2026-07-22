@@ -62,6 +62,14 @@ export default function ScaleWorkspace() {
   const running = Boolean(analysisId) && !result && !error;
 
   useEffect(() => {
+    const sharedTwinId = new URLSearchParams(window.location.search).get('twin');
+    if (sharedTwinId) {
+      setTwinId(sharedTwinId);
+      setTwinStage('正在加载共享路线孪生…');
+    }
+  }, []);
+
+  useEffect(() => {
     if (!analysisId || result || error) return;
     const timer = window.setInterval(async () => {
       try {
