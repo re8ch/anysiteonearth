@@ -419,19 +419,17 @@ def draw_geographic_objects(image: Image.Image, objects: list[dict[str, Any]],
         if kind.startswith("procedural_"):
             cover = kind.removeprefix("procedural_")
             semantic = {
-                "tree_cover": (34, 118, 70, 25), "cropland": (226, 185, 66, 24),
-                "grassland": (139, 181, 76, 20), "built_up": (214, 95, 75, 22),
-                "water": (38, 135, 200, 35), "shrubland": (111, 153, 71, 20),
+                "tree_cover": (34, 118, 70, 15), "cropland": (226, 185, 66, 14),
+                "grassland": (139, 181, 76, 12), "built_up": (214, 95, 75, 13),
+                "water": (38, 135, 200, 22), "shrubland": (111, 153, 71, 12),
             }.get(cover)
             parts = geometry.get("coordinates", [])
             if semantic and geometry.get("type") == "Polygon" and parts:
-                draw.polygon([project(value) for value in parts[0]], fill=semantic,
-                             outline=tuple(list(semantic[:3]) + [65]))
+                draw.polygon([project(value) for value in parts[0]], fill=semantic)
             elif semantic and geometry.get("type") == "MultiPolygon":
                 for polygon in parts:
                     if polygon:
-                        draw.polygon([project(value) for value in polygon[0]], fill=semantic,
-                                     outline=tuple(list(semantic[:3]) + [65]))
+                        draw.polygon([project(value) for value in polygon[0]], fill=semantic)
             continue
         if color is None:
             continue
