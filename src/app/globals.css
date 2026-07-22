@@ -2505,6 +2505,8 @@ h1 {
 .twin-video-wrap { position: relative; overflow: hidden; border-radius: 16px; background: #050608; cursor: crosshair; }
 .twin-video-wrap video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; }
 .twin-inspect-hint { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 999px; background: rgba(0,0,0,.68); font-size: 11px; pointer-events: none; }
+.twin-spatial-inspection { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; padding: 10px 13px; border-radius: 12px; background: rgba(100,210,255,.08); border: 1px solid rgba(100,210,255,.2); font: 11px "SF Mono", monospace; }
+.twin-spatial-inspection span { color: rgba(255,255,255,.6); }
 .twin-state-grid, .twin-truth-grid { display: grid; gap: 10px; margin: 12px 0; }
 .twin-state-grid { grid-template-columns: repeat(4, 1fr); }
 .twin-state-grid > div, .twin-truth-grid > div { padding: 14px; border: 1px solid rgba(255,255,255,.08); border-radius: 14px; background: rgba(255,255,255,.025); }

@@ -216,9 +216,11 @@ export interface TripTwinResult {
     twin_id: string;
     scenario: TwinScenario;
     duration_seconds: number;
+    extent: { west: number; south: number; east: number; north: number };
     keyframes: TripTwinKeyframe[];
     camera_tracks: Record<TwinCameraMode, Array<Record<string, unknown>>>;
-    objects: Array<{ id: string; kind: string; provenance: string }>;
+    objects: Array<{ id: string; kind: string; provenance: string;
+      geometry?: GeoJSON.Geometry; source_class?: string }>;
   };
   assets: {
     scene: string;
