@@ -291,6 +291,13 @@ function describeStage(stage: string, progress: number): { title: string; detail
       detail: '读取季节影像的云掩膜与光谱波段；场景完成后进度会继续推进。',
     };
   }
+  const radarScene = stage.match(/^acquiring_sentinel_1_rtc_(\d+)_of_(\d+)$/);
+  if (radarScene) {
+    return {
+      title: `正在分析雷达湿度（${radarScene[1]}/${radarScene[2]}）`,
+      detail: '读取 VV/VH 时序，补充多云条件下的地表湿润与粗糙度。',
+    };
+  }
   const stages: Record<string, { title: string; detail: string }> = {
     submitting: { title: '正在创建分析任务', detail: '正在校验范围和数据需求。' },
     waiting_for_worker: { title: '任务正在排队', detail: '工作节点空闲后会自动开始，无需停留在页面。' },
