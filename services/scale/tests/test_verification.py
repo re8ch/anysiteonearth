@@ -45,11 +45,13 @@ def test_gps_aggregate_exposes_evidence_not_raw_geometry():
         {"mean_distance_m": 5, "coverage": 0.9, "geometry": TARGET,
          "observer_id": "one", "observed_at": "2026-07-01T00:00:00Z"},
         {"mean_distance_m": 8, "coverage": 0.8, "geometry": TARGET,
-         "observer_id": "two", "observed_at": "2026-07-02T00:00:00Z"},
+         "observer_id": "two", "observed_at": "2026-07-02 00:00:00+00:00"},
     ]
     summary = gps_evidence_summary(traces)
     assert summary["independent_support_count"] == 2
     assert summary["mean_coverage"] == 0.85
+    assert summary["first_observed_at"] == "2026-07-01T00:00:00+00:00"
+    assert summary["last_observed_at"] == "2026-07-02T00:00:00+00:00"
     assert "geometry" not in summary
     value = result()
     recalculate_target(value, "candidate_corridor", "candidate:1", traces)

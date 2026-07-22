@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -63,7 +64,8 @@ def layer_for_target(target_type: str) -> str:
 def gps_evidence_summary(traces: list[dict[str, Any]]) -> dict[str, Any]:
     matched = [trace for trace in traces if trace.get("mean_distance_m") is not None
                and float(trace["mean_distance_m"]) <= 20 and float(trace.get("coverage", 0)) >= 0.60]
-    dates = sorted(str(trace.get("observed_at")) for trace in matched if trace.get("observed_at"))
+    dates = sorted(normalize_observed_at(trace["observed_at"])
+                   for trace in matched if trace.get("observed_at"))
     return {
         "source": "private GPS trace aggregation",
         "supporting_trace_count": len(matched),
@@ -76,6 +78,16 @@ def gps_evidence_summary(traces: list[dict[str, Any]]) -> dict[str, Any]:
         "last_observed_at": dates[-1] if dates else None,
         "privacy": "aggregate_only; raw traces remain private by default",
     }
+
+
+def normalize_observed_at(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    text = str(value).strip().replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(text).isoformat()
+    except ValueError:
+        return text
 
 
 def recalculate_target(result: dict[str, Any], target_type: str, target_id: str,
