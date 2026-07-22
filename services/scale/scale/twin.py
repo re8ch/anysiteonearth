@@ -93,7 +93,7 @@ class TwinCompiler:
         progress("building_camera_tracks", 62)
         cameras = {mode.value: camera_track(mode.value, keyframes)
                    for mode in request.camera_modes}
-        semantic_objects = compile_semantic_objects(places, landcover)
+        semantic_objects = compile_semantic_objects(places, landcover, road_features)
         manifest = {
             "type": "TripTwin", "version": self.version, "twin_id": str(twin_id),
             "analysis_id": str(request.analysis_id), "crs": "EPSG:4326",
@@ -256,7 +256,8 @@ def camera_track(mode: str, frames: list[dict[str, Any]]) -> list[dict[str, Any]
 
 
 def compile_semantic_objects(places: list[dict[str, Any]],
-                             landcover: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                             landcover: list[dict[str, Any]],
+    roads: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     objects = []
     for feature in places[:1000]:
         kind = feature.get("properties", {}).get("feature_kind")
@@ -269,6 +270,11 @@ def compile_semantic_objects(places: list[dict[str, Any]],
                         "geometry": mapping(geometry),
                         "provenance": "simulated_visualization",
                         "source_class": kind})
+    for feature in (roads or [])[:1000]:
+        geometry = shape(feature["geometry"]).simplify(0.000015, preserve_topology=True)
+        objects.append({"id": feature.get("id"), "kind": "road",
+                        "geometry": mapping(geometry), "provenance": "observed_osm",
+                        "surface": feature.get("properties", {}).get("surface_class")})
     return objects
 
 
@@ -405,6 +411,28 @@ def draw_geographic_objects(image: Image.Image, objects: list[dict[str, Any]],
         color = ((43, 145, 205, 150) if kind in {"water", "waterway"}
                  else (226, 196, 136, 175) if kind == "building"
                  else (244, 231, 173, 190) if kind == "place" else None)
+        if kind == "road":
+            parts = geometry.get("coordinates", [])
+            if geometry.get("type") == "LineString" and parts:
+                draw.line([project(value) for value in parts], fill=(238, 220, 174, 115), width=2)
+            continue
+        if kind.startswith("procedural_"):
+            cover = kind.removeprefix("procedural_")
+            semantic = {
+                "tree_cover": (34, 118, 70, 25), "cropland": (226, 185, 66, 24),
+                "grassland": (139, 181, 76, 20), "built_up": (214, 95, 75, 22),
+                "water": (38, 135, 200, 35), "shrubland": (111, 153, 71, 20),
+            }.get(cover)
+            parts = geometry.get("coordinates", [])
+            if semantic and geometry.get("type") == "Polygon" and parts:
+                draw.polygon([project(value) for value in parts[0]], fill=semantic,
+                             outline=tuple(list(semantic[:3]) + [65]))
+            elif semantic and geometry.get("type") == "MultiPolygon":
+                for polygon in parts:
+                    if polygon:
+                        draw.polygon([project(value) for value in polygon[0]], fill=semantic,
+                                     outline=tuple(list(semantic[:3]) + [65]))
+            continue
         if color is None:
             continue
         parts = geometry.get("coordinates", [])

@@ -6,7 +6,8 @@ import pytest
 
 from scale.config import Settings
 from scale.schemas import TwinCreate
-from scale.twin import FeatureIndex, TwinCompiler, TwinError, fill_elevations, scenario_state
+from scale.twin import (FeatureIndex, TwinCompiler, TwinError, compile_semantic_objects,
+                        fill_elevations, scenario_state)
 from scale.twin import render_route_video
 
 
@@ -86,6 +87,17 @@ def test_feature_index_finds_nearest_and_covering_feature():
                [111.81, 27.61], [111.81, 27.58]]]}, "properties": {}}]
     assert FeatureIndex(roads, metric=True).nearest((111.825, 27.592))["id"] == "road"
     assert FeatureIndex(covers).covering((111.825, 27.592))["id"] == "field"
+
+
+def test_semantic_scene_distinguishes_osm_roads_from_procedural_cover():
+    road = {"id": "r1", "geometry": {"type": "LineString", "coordinates": [
+        [111.82, 27.59], [111.83, 27.60]]}, "properties": {"surface_class": "gravel"}}
+    cover = {"id": "c1", "geometry": {"type": "Polygon", "coordinates": [[
+        [111.81, 27.58], [111.84, 27.58], [111.84, 27.61], [111.81, 27.58]]]},
+        "properties": {"landcover_class": "cropland"}}
+    objects = compile_semantic_objects([], [cover], [road])
+    assert [(item["kind"], item["provenance"]) for item in objects] == [
+        ("procedural_cropland", "simulated_visualization"), ("road", "observed_osm")]
 
 
 def test_backend_renderer_writes_playable_mp4(tmp_path):
