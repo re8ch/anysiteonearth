@@ -23,6 +23,8 @@ spec:
       labels: {app: scale-api}
     spec:
       serviceAccountName: anysite-runtime
+      imagePullSecrets:
+        - name: harbor-anysite-admin
       nodeSelector:
         kubernetes.io/hostname: r640
       tolerations:
@@ -71,6 +73,8 @@ spec:
       labels: {app: scale-worker}
     spec:
       serviceAccountName: anysite-runtime
+      imagePullSecrets:
+        - name: harbor-anysite-admin
       nodeSelector:
         kubernetes.io/hostname: r640
       tolerations:
