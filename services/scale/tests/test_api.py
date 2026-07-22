@@ -33,5 +33,5 @@ def test_models_describe_limitations():
     with TestClient(app) as client:
         models = client.get("/v1/models")
     assert models.status_code == 200
-    assert models.json()[0]["version"] == "scale_v1.1"
+    assert models.json()[0]["version"] == "scale_v1.2"
     assert models.json()[0]["limitations"]

@@ -24,7 +24,8 @@ from .schemas import (
 )
 from .tiles import TileRenderer
 from .verification import (
-    find_target, independent_support_count, match_trace, recalculate_target, verification_state,
+    find_target, independent_support_count, layer_for_target, match_trace, recalculate_target,
+    verification_state,
 )
 from .storage import Repository, create_repository
 from .worker import run_worker
@@ -49,7 +50,7 @@ async def lifespan(_: FastAPI):
     stop_worker.set()
 
 
-app = FastAPI(title="Anysite Scale", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="Anysite Scale", version="1.2.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -115,7 +116,7 @@ async def upstream_storage_error_handler(_: Request, error: httpx.HTTPError) -> 
 
 @app.get("/healthz")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "1.1.0"}
+    return {"status": "ok", "version": "1.2.0"}
 
 
 @app.post("/v1/analyses", response_model=AnalysisAccepted, status_code=202)
@@ -211,14 +212,16 @@ def get_tile(
 def list_models() -> list[ModelInfo]:
     return [
         ModelInfo(
-            version="scale_v1.1",
+            version="scale_v1.2",
             production=True,
             kind="interpretable_multisource_discovery",
-            training_data_version="worldcover_sentinel_rules_v1.1",
+            training_data_version="multisource_radar_weather_hydrology_rules_v1.2",
             applicable_region="Yangshi Town pilot; 25 km maximum AOI",
             limitations=[
                 "Candidate corridors are landscape inference, not observed paths",
                 "Sentinel-2 cannot resolve trail width or surface",
+                "ERA5/GPM precipitation is regional context, not a local rain gauge",
+                "DEM hydrology cannot resolve small culverts or roadside drains",
                 "Not a navigation safety guarantee",
             ],
         )
@@ -272,7 +275,7 @@ def create_gps_trace(
     trace_id = storage.save_gps_trace(payload)
     traces = existing + [payload]
     recalculate_target(result, trace.target_type, trace.target_id, traces)
-    layer_name = "candidate_corridors" if trace.target_type == "candidate_corridor" else "scenic_loops"
+    layer_name = layer_for_target(trace.target_type)
     storage.save_layers(trace.analysis_id, {layer_name: result["layers"][layer_name]})
     return GpsTraceAccepted(trace_id=trace_id, verification_state=state,
                             mean_distance_m=round(mean_distance, 2), coverage=round(coverage, 3))
@@ -292,6 +295,6 @@ def revoke_gps_trace(
     result["layers"] = storage.get_layers(analysis_id)
     traces = storage.list_gps_traces(analysis_id, revoked["target_id"])
     state = recalculate_target(result, revoked["target_type"], revoked["target_id"], traces)
-    layer_name = "candidate_corridors" if revoked["target_type"] == "candidate_corridor" else "scenic_loops"
+    layer_name = layer_for_target(revoked["target_type"])
     storage.save_layers(analysis_id, {layer_name: result["layers"][layer_name]})
     return {"trace_id": str(trace_id), "revoked": True, "verification_state": state}

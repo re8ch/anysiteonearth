@@ -50,9 +50,32 @@ def independent_support_count(traces: list[dict[str, Any]]) -> int:
 
 
 def find_target(result: dict[str, Any], target_type: str, target_id: str) -> dict[str, Any] | None:
-    layer = "candidate_corridors" if target_type == "candidate_corridor" else "scenic_loops"
+    layer = layer_for_target(target_type)
     return next((feature for feature in result.get("layers", {}).get(layer, {}).get("features", [])
                  if str(feature.get("id")) == target_id), None)
+
+
+def layer_for_target(target_type: str) -> str:
+    return {"road_segment": "roads", "candidate_corridor": "candidate_corridors",
+            "scenic_loop": "scenic_loops"}[target_type]
+
+
+def gps_evidence_summary(traces: list[dict[str, Any]]) -> dict[str, Any]:
+    matched = [trace for trace in traces if trace.get("mean_distance_m") is not None
+               and float(trace["mean_distance_m"]) <= 20 and float(trace.get("coverage", 0)) >= 0.60]
+    dates = sorted(str(trace.get("observed_at")) for trace in matched if trace.get("observed_at"))
+    return {
+        "source": "private GPS trace aggregation",
+        "supporting_trace_count": len(matched),
+        "independent_support_count": independent_support_count(matched),
+        "mean_distance_m": round(float(np.mean([float(trace["mean_distance_m"])
+                                                 for trace in matched])), 2) if matched else None,
+        "mean_coverage": round(float(np.mean([float(trace["coverage"])
+                                               for trace in matched])), 3) if matched else 0,
+        "first_observed_at": dates[0] if dates else None,
+        "last_observed_at": dates[-1] if dates else None,
+        "privacy": "aggregate_only; raw traces remain private by default",
+    }
 
 
 def recalculate_target(result: dict[str, Any], target_type: str, target_id: str,
@@ -61,14 +84,26 @@ def recalculate_target(result: dict[str, Any], target_type: str, target_id: str,
     if target is None:
         raise ValueError("verification target does not exist in this analysis")
     support_count = independent_support_count(traces)
-    state = "verified" if support_count >= 2 else "gps_supported" if support_count else "inferred_unverified"
+    fallback_state = "observed" if target_type == "road_segment" else "inferred_unverified"
+    state = "verified" if support_count >= 2 else "gps_supported" if support_count else fallback_state
     target["properties"]["verification_state"] = state
-    target["properties"]["observation_state"] = "verified" if state == "verified" else "inferred_unverified"
-    target["properties"]["navigable"] = state == "verified"
+    target["properties"]["observation_state"] = (
+        "verified" if state == "verified" else "observed" if target_type == "road_segment"
+        else "inferred_unverified")
+    target["properties"]["navigable"] = target_type == "road_segment" or state == "verified"
     target["properties"]["gps_support_count"] = support_count
+    target["properties"]["gps_evidence_summary"] = gps_evidence_summary(traces)
     target["properties"].setdefault(
         "inference_confidence", float(target["properties"].get("confidence", 0.25))
     )
     base = float(target["properties"]["inference_confidence"])
     target["properties"]["confidence"] = round(min(0.95, base + support_count * 0.16), 3)
+    evidence = [item for item in target["properties"].get("evidence", [])
+                if item.get("source") != "private GPS trace aggregation"]
+    if support_count:
+        summary = target["properties"]["gps_evidence_summary"]
+        evidence.append({"source": summary["source"], "observed_at": summary["last_observed_at"],
+                         "native_resolution_m": None, "license": "private user contribution",
+                         "quality": min(0.95, 0.55 + 0.18 * support_count)})
+    target["properties"]["evidence"] = evidence
     return state

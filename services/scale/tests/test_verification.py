@@ -1,4 +1,7 @@
-from scale.verification import independent_support_count, match_trace, recalculate_target, verification_state
+from scale.verification import (
+    gps_evidence_summary, independent_support_count, match_trace, recalculate_target,
+    verification_state,
+)
 
 
 TARGET = {"type": "LineString", "coordinates": [[111.82, 27.59], [111.825, 27.59]]}
@@ -35,3 +38,21 @@ def test_revoke_style_recalculation_downgrades_target():
 def test_duplicate_anonymous_trace_is_not_independent_support():
     trace = {"mean_distance_m": 5, "coverage": 0.9, "geometry": TARGET}
     assert independent_support_count([trace, trace]) == 1
+
+
+def test_gps_aggregate_exposes_evidence_not_raw_geometry():
+    traces = [
+        {"mean_distance_m": 5, "coverage": 0.9, "geometry": TARGET,
+         "observer_id": "one", "observed_at": "2026-07-01T00:00:00Z"},
+        {"mean_distance_m": 8, "coverage": 0.8, "geometry": TARGET,
+         "observer_id": "two", "observed_at": "2026-07-02T00:00:00Z"},
+    ]
+    summary = gps_evidence_summary(traces)
+    assert summary["independent_support_count"] == 2
+    assert summary["mean_coverage"] == 0.85
+    assert "geometry" not in summary
+    value = result()
+    recalculate_target(value, "candidate_corridor", "candidate:1", traces)
+    props = value["layers"]["candidate_corridors"]["features"][0]["properties"]
+    assert props["verification_state"] == "verified"
+    assert props["evidence"][-1]["source"] == "private GPS trace aggregation"

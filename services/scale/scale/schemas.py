@@ -137,7 +137,7 @@ class FeedbackCreate(BaseModel):
 
 class GpsTraceCreate(BaseModel):
     analysis_id: UUID
-    target_type: Literal["candidate_corridor", "scenic_loop"] = "candidate_corridor"
+    target_type: Literal["road_segment", "candidate_corridor", "scenic_loop"] = "candidate_corridor"
     target_id: str
     geometry: dict[str, Any]
     observed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
