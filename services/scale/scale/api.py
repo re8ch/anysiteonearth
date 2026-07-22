@@ -53,7 +53,7 @@ async def lifespan(_: FastAPI):
     stop_worker.set()
 
 
-app = FastAPI(title="Anysite Scale", version="1.3.0", lifespan=lifespan)
+app = FastAPI(title="Anysite Scale", version="1.3.1", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -119,7 +119,7 @@ async def upstream_storage_error_handler(_: Request, error: httpx.HTTPError) -> 
 
 @app.get("/healthz")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "1.3.0"}
+    return {"status": "ok", "version": "1.3.1"}
 
 
 @app.post("/v1/analyses", response_model=AnalysisAccepted, status_code=202)
@@ -197,7 +197,7 @@ def get_twin_asset(twin_id: UUID, asset_name: str,
     if item["status"] != AnalysisStatus.completed.value:
         raise HTTPException(409, detail={"code": "TWIN_NOT_READY",
             "message": f"Trip twin is {item['status']}", "retryable": True, "details": {}})
-    allowed = asset_name == "scene.json" or (
+    allowed = asset_name in {"scene.json", "backdrop.png"} or (
         asset_name.startswith(("preview-720p-", "export-1080p-"))
         and asset_name.endswith(".mp4")
         and asset_name.removesuffix(".mp4").rsplit("-", 1)[-1] in {"aerial", "follow"})
@@ -208,8 +208,9 @@ def get_twin_asset(twin_id: UUID, asset_name: str,
     if not path.exists():
         raise HTTPException(404, detail={"code": "TWIN_ASSET_NOT_FOUND",
             "message": "Twin asset is not available", "retryable": False, "details": {}})
-    return FileResponse(path, media_type=("application/json" if asset_name == "scene.json"
-                                          else "video/mp4"), filename=asset_name,
+    media_type = ("application/json" if asset_name == "scene.json" else
+                  "image/png" if asset_name == "backdrop.png" else "video/mp4")
+    return FileResponse(path, media_type=media_type, filename=asset_name,
                         content_disposition_type=("attachment" if asset_name == "scene.json"
                                                   else "inline"))
 

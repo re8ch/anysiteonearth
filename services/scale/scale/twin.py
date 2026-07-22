@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 import math
 from pathlib import Path
@@ -17,6 +17,7 @@ from shapely.strtree import STRtree
 from .config import Settings
 from .schemas import BBox, TwinCreate
 from .sources import CopernicusDemSource, interpolation_points
+from .tiles import TileRenderer
 
 
 TO_METRIC = Transformer.from_crs("EPSG:4326", "EPSG:32649", always_xy=True).transform
@@ -34,6 +35,7 @@ class TwinCompiler:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.dem = CopernicusDemSource(settings.stac_url)
+        self.tiles = TileRenderer(settings.stac_url, settings.cache_dir)
         settings.twin_asset_dir.mkdir(parents=True, exist_ok=True)
 
     def compile(self, twin_id: UUID, request: TwinCreate, analysis: dict[str, Any],
@@ -116,6 +118,16 @@ class TwinCompiler:
 
         asset_dir = self.settings.twin_asset_dir / str(twin_id)
         asset_dir.mkdir(parents=True, exist_ok=True)
+        progress("compositing_real_geography", 68)
+        backdrop_warning = build_geographic_backdrop(
+            self.tiles, manifest, analysis, asset_dir / "backdrop.png")
+        manifest["rendering"]["backdrop"] = {
+            "asset": f"/v1/twins/{twin_id}/assets/backdrop.png",
+            "satellite": "Sentinel-2 L2A RGB",
+            "terrain": "Copernicus DEM GLO-30 hillshade",
+            "vectors": "OpenStreetMap buildings, water and places",
+            "warning": backdrop_warning,
+        }
         (asset_dir / "scene.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
         progress("rendering_backend_preview", 76)
         previews: dict[str, str] = {}
@@ -271,12 +283,14 @@ def render_route_video(manifest: dict[str, Any], output: Path, width: int, heigh
                "-s", f"{width}x{height}", "-r", str(fps), "-i", "-", "-an", "-c:v", "libx264",
                "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p", str(output)]
     process = subprocess.Popen(command, stdin=subprocess.PIPE)
+    backdrop_path = output.parent / "backdrop.png"
+    backdrop = Image.open(backdrop_path).convert("RGB") if backdrop_path.exists() else None
     try:
         for number in range(duration_seconds * fps):
             fraction = number / max(duration_seconds * fps - 1, 1)
             active = min(len(route) - 1, round(fraction * (len(route) - 1)))
             image = twin_frame(width, height, route, active, (west, south, east, north),
-                                manifest["scenario"], frames[active], camera_mode)
+                                manifest["scenario"], frames[active], camera_mode, backdrop)
             assert process.stdin is not None
             process.stdin.write(image.tobytes())
     finally:
@@ -289,22 +303,28 @@ def render_route_video(manifest: dict[str, Any], output: Path, width: int, heigh
 
 def twin_frame(width: int, height: int, route: list[list[float]], active: int,
                bounds: tuple[float, float, float, float], scenario: str,
-               state: dict[str, Any], camera_mode: str = "aerial") -> Image.Image:
+               state: dict[str, Any], camera_mode: str = "aerial",
+               backdrop: Image.Image | None = None) -> Image.Image:
     palette = {"clear": ((36, 82, 55), (115, 169, 204)),
                "after_rain": ((30, 58, 47), (88, 113, 127)),
                "mist": ((55, 75, 66), (158, 169, 166))}[scenario]
-    image = Image.new("RGB", (width, height), palette[0])
-    draw = ImageDraw.Draw(image, "RGBA")
-    for row in range(height):
-        blend = row / height
-        color = tuple(round(palette[1][i] * (1-blend) + palette[0][i] * blend) for i in range(3))
-        draw.line((0, row, width, row), fill=color + (255,))
     west, south, east, north = bounds
+    source_bounds = bounds
     if camera_mode == "follow":
         center = route[active]
         span_x, span_y = (east-west) * 0.22, (north-south) * 0.22
         west, east = center[0]-span_x, center[0]+span_x
         south, north = center[1]-span_y, center[1]+span_y
+    image = backdrop_view(backdrop, source_bounds, (west, south, east, north), width, height)
+    if image is None:
+        image = Image.new("RGB", (width, height), palette[0])
+        draw = ImageDraw.Draw(image, "RGBA")
+        for row in range(height):
+            blend = row / height
+            color = tuple(round(palette[1][i] * (1-blend) + palette[0][i] * blend)
+                          for i in range(3))
+            draw.line((0, row, width, row), fill=color + (255,))
+    draw = ImageDraw.Draw(image, "RGBA")
     def project(item: list[float]) -> tuple[int, int]:
         x = int((item[0]-west) / max(east-west, 1e-9) * width)
         y = int((north-item[1]) / max(north-south, 1e-9) * height)
@@ -330,3 +350,68 @@ def twin_frame(width: int, height: int, route: list[list[float]], active: int,
     elif scenario == "after_rain":
         image = ImageEnhance.Contrast(image).enhance(0.86)
     return image
+
+
+def backdrop_view(backdrop: Image.Image | None, source: tuple[float, float, float, float],
+                  view: tuple[float, float, float, float], width: int,
+                  height: int) -> Image.Image | None:
+    if backdrop is None:
+        return None
+    sw, ss, se, sn = source
+    vw, vs, ve, vn = view
+    left = round((vw-sw) / max(se-sw, 1e-9) * backdrop.width)
+    right = round((ve-sw) / max(se-sw, 1e-9) * backdrop.width)
+    top = round((sn-vn) / max(sn-ss, 1e-9) * backdrop.height)
+    bottom = round((sn-vs) / max(sn-ss, 1e-9) * backdrop.height)
+    # Extend edge pixels when the follow camera reaches the route boundary.
+    canvas = Image.new("RGB", backdrop.size, tuple(backdrop.resize((1, 1)).getpixel((0, 0))))
+    canvas.paste(backdrop)
+    crop = canvas.crop((max(0, left), max(0, top), min(backdrop.width, right),
+                        min(backdrop.height, bottom)))
+    return crop.resize((width, height), Image.Resampling.LANCZOS)
+
+
+def build_geographic_backdrop(renderer: TileRenderer, manifest: dict[str, Any],
+                              analysis: dict[str, Any], output: Path) -> str | None:
+    bounds = tuple(manifest["extent"][key] for key in ("west", "south", "east", "north"))
+    request = analysis.get("request", {})
+    window = request.get("time_window", {})
+    try:
+        start = date.fromisoformat(str(window.get("start", "2025-01-01"))[:10])
+        end = date.fromisoformat(str(window.get("end", datetime.now(timezone.utc).date()))[:10])
+        satellite = renderer._satellite(bounds, "summer", start, end)
+        terrain = renderer._terrain(bounds)
+        rgb = Image.fromarray(satellite[:3].transpose(1, 2, 0), "RGB")
+        hillshade = Image.fromarray(terrain[:3].transpose(1, 2, 0), "RGB")
+        image = Image.blend(rgb, ImageEnhance.Contrast(hillshade).enhance(1.25), 0.2)
+        image = ImageEnhance.Color(image).enhance(1.08).resize((1024, 1024), Image.Resampling.LANCZOS)
+        draw_geographic_objects(image, manifest.get("objects", []), bounds)
+        image.save(output, "PNG", optimize=True)
+        return None
+    except Exception as error:  # upstream imagery failure must not destroy the whole twin
+        return f"Real backdrop unavailable: {type(error).__name__}: {error}"
+
+
+def draw_geographic_objects(image: Image.Image, objects: list[dict[str, Any]],
+                            bounds: tuple[float, float, float, float]) -> None:
+    draw = ImageDraw.Draw(image, "RGBA")
+    west, south, east, north = bounds
+    def project(coord: list[float] | tuple[float, ...]) -> tuple[int, int]:
+        return (round((coord[0]-west) / max(east-west, 1e-9) * image.width),
+                round((north-coord[1]) / max(north-south, 1e-9) * image.height))
+    for item in objects:
+        geometry = item.get("geometry") or {}
+        kind = str(item.get("kind", ""))
+        color = ((43, 145, 205, 150) if kind in {"water", "waterway"}
+                 else (226, 196, 136, 175) if kind == "building"
+                 else (244, 231, 173, 190) if kind == "place" else None)
+        if color is None:
+            continue
+        parts = geometry.get("coordinates", [])
+        if geometry.get("type") == "Point":
+            x, y = project(parts); draw.ellipse((x-4, y-4, x+4, y+4), fill=color)
+        elif geometry.get("type") == "LineString":
+            draw.line([project(value) for value in parts], fill=color, width=3)
+        elif geometry.get("type") == "Polygon" and parts:
+            draw.polygon([project(value) for value in parts[0]], fill=color,
+                         outline=tuple(list(color[:3]) + [230]))

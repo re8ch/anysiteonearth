@@ -39,6 +39,7 @@ def test_compiler_builds_four_dimensional_scene_and_truth_labels(tmp_path, monke
         output.write_bytes(b"video")
         rendered.append((width, height))
     monkeypatch.setattr("scale.twin.render_route_video", fake_render)
+    monkeypatch.setattr("scale.twin.build_geographic_backdrop", lambda *_args: None)
     result = compiler.compile(uuid4(), request(uuid4()), {"result": {"metadata": {
         "data_coverage": {"road_segments": 20}}}}, {
             "roads": {"features": []}, "places": {"features": []},
