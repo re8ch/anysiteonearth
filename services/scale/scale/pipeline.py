@@ -27,7 +27,7 @@ Progress = Callable[[str, int], None]
 
 
 class ScalePipeline:
-    processing_version = "scale_pipeline_1.2.1"
+    processing_version = "scale_pipeline_1.2.2"
     def __init__(self, settings: Settings) -> None:
         self.osm = OSMSource(
             settings.overpass_endpoints,
@@ -89,7 +89,7 @@ class ScalePipeline:
             warnings.append({"code": "OSM_CONTEXT_UNAVAILABLE", "message": str(context_warning), "retryable": True})
         try:
             spectral = self.sentinel.sample(
-                bbox, segments, request.time_window.start, request.time_window.end
+                bbox, segments, request.time_window.start, request.time_window.end, progress
             )
         except Exception as error:
             source_error = error if isinstance(error, SourceError) else SourceError(

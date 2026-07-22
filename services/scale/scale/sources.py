@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import time
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 import httpx
 import numpy as np
@@ -355,10 +355,12 @@ class Sentinel2Source:
         segments: Iterable[RoadSegment],
         start: date,
         end: date,
+        progress: Callable[[str, int], None] | None = None,
     ) -> dict[str, SpectralFeatures]:
         try:
             import planetary_computer
             import rasterio
+            from rasterio.enums import Resampling
             from pystac_client import Client
         except ImportError as error:
             raise SourceError("SENTINEL_DEPENDENCY_MISSING", str(error), False) from error
@@ -374,6 +376,8 @@ class Sentinel2Source:
         items = select_seasonal_items(list(search.items()), max_scenes=4)
         if not items:
             raise SourceError("SENTINEL_EMPTY", "No Sentinel-2 scenes cover the AOI", False)
+        if progress:
+            progress(f"acquiring_sentinel_2_0_of_{len(items)}", 29)
         segment_list = list(segments)
         accumulated: dict[str, dict[str, list[np.ndarray]]] = {
             segment.segment_id: {key: [] for key in ["B03", "B04", "B08", "B11"]}
@@ -391,7 +395,7 @@ class Sentinel2Source:
             for segment in segment_list
         }
 
-        for unsigned_item in items:
+        for item_index, unsigned_item in enumerate(items, start=1):
             item = planetary_computer.sign(unsigned_item)
             if not all(key in item.assets for key in required):
                 continue
@@ -409,13 +413,32 @@ class Sentinel2Source:
                         max(bottom, top),
                         transform=dataset.transform,
                     ).round_offsets().round_lengths()
+                    # Reading a full 25 km AOI at native 10 m resolution fetches hundreds
+                    # of MB from remote COGs even though road inference works at 100–250 m.
+                    # Ask the COG for an overview capped at 1024 px and keep native source
+                    # resolution in evidence metadata. This preserves useful spectral
+                    # context while making the interactive analysis bounded.
+                    max_dimension = max(int(window.width), int(window.height), 1)
+                    overview_scale = min(1.0, 1024 / max_dimension)
+                    out_width = max(1, round(window.width * overview_scale))
+                    out_height = max(1, round(window.height * overview_scale))
                     with rasterio.Env(
                         GDAL_HTTP_TIMEOUT="20",
                         GDAL_HTTP_MAX_RETRY="2",
                         GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR",
                     ):
-                        raster = dataset.read(1, window=window, boundless=True, fill_value=0)
-                    transform = dataset.window_transform(window)
+                        raster = dataset.read(
+                            1,
+                            window=window,
+                            out_shape=(out_height, out_width),
+                            boundless=True,
+                            fill_value=0,
+                            resampling=(Resampling.nearest if key == "SCL"
+                                        else Resampling.bilinear),
+                        )
+                    window_bounds = rasterio.windows.bounds(window, dataset.transform)
+                    transform = rasterio.transform.from_bounds(
+                        *window_bounds, out_width, out_height)
                     sampled_by_band[key] = {}
                     for segment_id, positions in positions_by_segment.items():
                         projected = [transformer.transform(lng, lat) for lng, lat in positions]
@@ -451,6 +474,11 @@ class Sentinel2Source:
             finally:
                 for dataset in datasets.values():
                     dataset.close()
+            if progress:
+                progress(
+                    f"acquiring_sentinel_2_{item_index}_of_{len(items)}",
+                    min(35, 29 + round(6 * item_index / len(items))),
+                )
 
         output: dict[str, SpectralFeatures] = {}
         for segment in segment_list:
