@@ -5,7 +5,7 @@ import hmac
 import threading
 import time
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
@@ -425,6 +425,24 @@ class PostgrestRepository:
         return self._normalize(rows[0]) if rows else None
 
     def claim_analysis(self) -> dict[str, Any] | None:
+        # PostgREST's SQL claim function historically only selected queued rows.
+        # Recover leases left behind by a terminated worker before claiming work;
+        # scene-level progress updates keep healthy long-running jobs fresh.
+        cutoff = (now() - timedelta(minutes=15)).isoformat()
+        recovery = self.client.patch(
+            f"{self.base_url}/analyses",
+            headers=self._headers(),
+            params={
+                "status": "in.(acquiring,processing,inferencing)",
+                "updated_at": f"lt.{cutoff}",
+            },
+            json={
+                "status": AnalysisStatus.queued.value,
+                "stage": "recovering_interrupted_analysis",
+                "updated_at": now().isoformat(),
+            },
+        )
+        recovery.raise_for_status()
         response = self.client.post(
             f"{self.base_url}/rpc/claim_analysis",
             headers=self._headers(),
