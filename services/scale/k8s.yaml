@@ -41,6 +41,7 @@ spec:
               valueFrom:
                 secretKeyRef: {name: anysite-db-credentials, key: PGRST_JWT_SECRET}
             - {name: SCALE_EMBEDDED_WORKER, value: "false"}
+            - {name: SCALE_CORS_ORIGINS, value: "https://anysiteonearth.re8ch.com,https://anysiteonearth.pages.dev,https://agent-scale-v1-1.anysiteonearth.pages.dev,http://localhost:3000"}
             - {name: SCALE_SENTINEL1_COLLECTION, value: "sentinel-1-rtc"}
             - {name: SCALE_ERA5_URL, value: "https://archive-api.open-meteo.com/v1/archive"}
           volumeMounts:
@@ -127,6 +128,28 @@ spec:
   ingressClassName: traefik
   rules:
     - host: api.re8ch.com
+      http:
+        paths:
+          - path: /anysite/scale
+            pathType: Prefix
+            backend:
+              service:
+                name: scale-api
+                port:
+                  name: http
+    # Direct regional aliases keep RoveMap usable when the weighted api root
+    # has an unhealthy acceleration edge. TLS remains owned by regional edge.
+    - host: api-shanghai217.re8ch.com
+      http:
+        paths:
+          - path: /anysite/scale
+            pathType: Prefix
+            backend:
+              service:
+                name: scale-api
+                port:
+                  name: http
+    - host: api-guangzhou24.re8ch.com
       http:
         paths:
           - path: /anysite/scale

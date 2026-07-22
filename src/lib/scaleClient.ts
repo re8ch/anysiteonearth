@@ -10,7 +10,7 @@ import {
 
 const SCALE_API_BASE =
   process.env.NEXT_PUBLIC_SCALE_API_BASE ??
-  'https://api.re8ch.com/anysite/scale';
+  'https://api-shanghai217.re8ch.com/anysite/scale';
 
 export function scaleTileUrl(id: string, layer: string, season: string): string {
   return `${SCALE_API_BASE}/v1/analyses/${id}/tiles/${layer}/${season}/{z}/{x}/{y}.png`;
