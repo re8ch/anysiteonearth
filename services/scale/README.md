@@ -1,4 +1,4 @@
-# Scale v1.2
+# Scale v1.3
 
 Scale scores known rural roads and discovers evidence-labelled field-edge,
 riparian and forest-gap corridors using OSM, Sentinel-2, ESA WorldCover and
@@ -61,7 +61,27 @@ curl -X POST http://localhost:8000/v1/analyses \
 
 Vector layers are available at
 `/v1/analyses/{id}/layers/{roads|candidate_corridors|scenic_loops|places|contours|landcover}`.
-Raster tiles use `/v1/analyses/{id}/tiles/{seasonal_spectral|landcover|terrain}/{season}/{z}/{x}/{y}.png`.
+Raster tiles use `/v1/analyses/{id}/tiles/{seasonal_spectral|satellite|landcover|terrain}/{season}/{z}/{x}/{y}.png`.
+
+## Route digital twins
+
+Scale compiles a completed 8–25 km scenic route into a durable asynchronous
+trip twin. The backend samples Copernicus DEM, nearby OSM roads and semantic
+layers, simulates wetness/drainage and atmosphere over trip time, then renders
+separate aerial and follow-camera H.264 previews. The scene manifest preserves
+field-level provenance so directly observed, inferred and simulated values stay
+distinguishable.
+
+```bash
+curl -X POST http://localhost:8000/v1/twins \
+  -H 'content-type: application/json' \
+  -d '{"analysis_id":"ANALYSIS_UUID","route_id":"ROUTE_ID","scenario":"after_rain","camera_modes":["aerial","follow"],"export_1080p":true}'
+```
+
+Poll `/v1/twins/{id}`, fetch its manifest from `/v1/twins/{id}/result`, and
+stream generated MP4 files through `/v1/twins/{id}/assets/{asset_name}`. API and
+worker must share `SCALE_TWIN_ASSET_DIR`; the K3s manifest mounts the existing
+cache PVC in both deployments. Apply `006_trip_twins.sql` before rollout.
 Private GeoJSON LineString or GPX traces are submitted through `/v1/gps-traces`;
 two independent supporting observers are required for `verified`.
 
