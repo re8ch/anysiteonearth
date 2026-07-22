@@ -13,16 +13,21 @@ from .schemas import AnalysisCreate, BBox
 from .sources import (
     CopernicusDemSource,
     OSMSource,
+    RainfallSource,
+    RadarFeatures,
     Sentinel2Source,
+    Sentinel1RtcSource,
     SourceError,
     SpectralFeatures,
+    WeatherFeatures,
+    attach_osm_transport_context,
 )
 
 Progress = Callable[[str, int], None]
 
 
 class ScalePipeline:
-    processing_version = "scale_pipeline_1.1.3"
+    processing_version = "scale_pipeline_1.2.0"
     def __init__(self, settings: Settings) -> None:
         self.osm = OSMSource(
             settings.overpass_endpoints,
@@ -33,6 +38,10 @@ class ScalePipeline:
             settings.overpass_cache_ttl_hours,
         )
         self.sentinel = Sentinel2Source(settings.stac_url)
+        self.sentinel1 = Sentinel1RtcSource(settings.stac_url, settings.sentinel1_collection)
+        self.weather = RainfallSource(settings.era5_url, settings.gpm_url,
+            settings.cache_dir / "weather", settings.request_timeout_seconds,
+            settings.weather_cache_ttl_hours)
         self.dem = CopernicusDemSource(settings.stac_url)
         self.worldcover = WorldCoverSource(settings.stac_url)
         self.cache_dir = settings.cache_dir / "results"
@@ -72,6 +81,7 @@ class ScalePipeline:
             context_warning = error
         else:
             context_warning = None
+        attach_osm_transport_context(segments, context_features)
 
         progress("acquiring_sentinel_2", 28)
         warnings: list[dict[str, Any]] = []
@@ -108,6 +118,32 @@ class ScalePipeline:
                 "details": {"missing_segments": missing_spectral, "total_segments": len(segments)},
             })
 
+        progress("acquiring_sentinel_1_rtc", 36)
+        try:
+            radar = self.sentinel1.sample(
+                bbox, segments, request.time_window.start, request.time_window.end)
+        except Exception as error:
+            source_error = error if isinstance(error, SourceError) else SourceError(
+                "SENTINEL1_UNAVAILABLE", str(error), True)
+            warnings.append({"code": source_error.code, "message": str(source_error),
+                             "retryable": source_error.retryable})
+            radar = {segment.segment_id: RadarFeatures(warning=str(source_error))
+                     for segment in segments}
+
+        progress("acquiring_weather_context", 41)
+        try:
+            weather = self.weather.sample(bbox, request.time_window.end)
+        except Exception as error:
+            source_error = error if isinstance(error, SourceError) else SourceError(
+                "WEATHER_UNAVAILABLE", str(error), True)
+            warnings.append({"code": source_error.code, "message": str(source_error),
+                             "retryable": source_error.retryable})
+            weather = WeatherFeatures(warning=str(source_error))
+        if not self.weather.gpm_url:
+            warnings.append({"code": "GPM_NOT_CONFIGURED", "message":
+                "NASA GPM gateway is not configured; rainfall context uses ERA5-Land only",
+                "retryable": False})
+
         progress("acquiring_copernicus_dem", 45)
         try:
             terrain = self.dem.sample(bbox, segments)
@@ -132,6 +168,16 @@ class ScalePipeline:
                 "retryable": False,
                 "details": {"missing_segments": missing_dem, "total_segments": len(segments)},
             })
+
+        progress("deriving_dem_hydrology", 52)
+        try:
+            hydrology = self.dem.hydrology(bbox, segments)
+        except Exception as error:
+            source_error = error if isinstance(error, SourceError) else SourceError(
+                "HYDROLOGY_UNAVAILABLE", str(error), True)
+            warnings.append({"code": source_error.code, "message": str(source_error),
+                             "retryable": source_error.retryable})
+            hydrology = {}
 
         progress("extracting_landscape_structure", 55)
         try:
@@ -169,6 +215,9 @@ class ScalePipeline:
                 osm_evidence,
                 spectral.get(segment.segment_id, SpectralFeatures(warning="No spectral sample")),
                 TerrainFeatures(**terrain.get(segment.segment_id, {})),
+                radar.get(segment.segment_id, RadarFeatures(warning="No radar sample")),
+                weather,
+                hydrology.get(segment.segment_id),
             )
             for segment in segments
         ]
@@ -183,7 +232,7 @@ class ScalePipeline:
             "features": features,
             "metadata": {
                 "generated_at": datetime.now(timezone.utc).isoformat(),
-                "model_version": "scale_v1.1",
+                "model_version": "scale_v1.2",
                 "processing_version": self.processing_version,
                 "crs": "EPSG:4326",
                 "analysis_scale_m": 10,
@@ -199,6 +248,12 @@ class ScalePipeline:
                         for value in spectral.values()
                         for scene_date in value.scene_dates
                     }),
+                    "sentinel1_valid_segments": sum(
+                        1 for value in radar.values() if value.valid_fraction > 0),
+                    "sentinel1_scene_dates": sorted({
+                        scene_date for value in radar.values() for scene_date in value.scene_dates}),
+                    "weather_evidence_sources": [item.source for item in weather.evidence],
+                    "hydrology_valid_segments": len(hydrology),
                     "worldcover_fraction": landscape.coverage,
                     "candidate_count": len(candidates),
                     "route_count": len(routes),
@@ -206,6 +261,8 @@ class ScalePipeline:
                 "limitations": [
                     "Known OSM ways are scored; narrow unmapped trails are not reliably detected",
                     "Sentinel-2 spectral values describe the 10 m surroundings, not exact road surface",
+                    "ERA5/GPM values are regional context and are not segment-scale rain gauges",
+                    "GLO-30 hydrology derivatives cannot resolve small culverts or roadside drains",
                     "Scores support exploration planning and are not a navigation safety guarantee",
                 ],
             },
