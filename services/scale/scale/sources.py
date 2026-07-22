@@ -522,10 +522,12 @@ class Sentinel1RtcSource:
         self.collection = collection
 
     def sample(self, bbox: BBox, segments: Iterable[RoadSegment], start: date,
-               end: date) -> dict[str, RadarFeatures]:
+               end: date, progress: Callable[[str, int], None] | None = None
+               ) -> dict[str, RadarFeatures]:
         try:
             import planetary_computer
             import rasterio
+            from rasterio.enums import Resampling
             from pystac_client import Client
         except ImportError as error:
             raise SourceError("SENTINEL1_DEPENDENCY_MISSING", str(error), False) from error
@@ -538,11 +540,13 @@ class Sentinel1RtcSource:
                        key=lambda item: item.datetime, reverse=True)[:8]
         if not items:
             raise SourceError("SENTINEL1_EMPTY", "No Sentinel-1 RTC scenes cover the AOI", False)
+        if progress:
+            progress(f"acquiring_sentinel_1_rtc_0_of_{len(items)}", 36)
         samples = {segment.segment_id: {"vv": [], "vh": [], "dates": []}
                    for segment in segment_list}
         positions = {segment.segment_id: interpolation_points(segment.geometry, 5)
                      for segment in segment_list}
-        for unsigned in items:
+        for item_index, unsigned in enumerate(items, start=1):
             item = planetary_computer.sign(unsigned)
             asset_keys = {key.lower(): key for key in item.assets}
             if "vv" not in asset_keys or "vh" not in asset_keys:
@@ -550,9 +554,33 @@ class Sentinel1RtcSource:
             for band in ("vv", "vh"):
                 with rasterio.open(item.assets[asset_keys[band]].href) as dataset:
                     project = Transformer.from_crs("EPSG:4326", dataset.crs, always_xy=True)
+                    left, bottom = project.transform(bbox.west, bbox.south)
+                    right, top = project.transform(bbox.east, bbox.north)
+                    window = rasterio.windows.from_bounds(
+                        min(left, right), min(bottom, top), max(left, right), max(bottom, top),
+                        transform=dataset.transform,
+                    ).round_offsets().round_lengths()
+                    max_dimension = max(int(window.width), int(window.height), 1)
+                    overview_scale = min(1.0, 1024 / max_dimension)
+                    out_width = max(1, round(window.width * overview_scale))
+                    out_height = max(1, round(window.height * overview_scale))
+                    with rasterio.Env(GDAL_HTTP_TIMEOUT="20", GDAL_HTTP_MAX_RETRY="2",
+                                      GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR"):
+                        raster = dataset.read(1, window=window, out_shape=(out_height, out_width),
+                                              boundless=True, fill_value=0,
+                                              resampling=Resampling.bilinear)
+                    sample_transform = rasterio.transform.from_bounds(
+                        *rasterio.windows.bounds(window, dataset.transform), out_width, out_height)
                     for segment_id, points in positions.items():
                         coordinates = [project.transform(*point) for point in points]
-                        values = np.asarray([value[0] for value in dataset.sample(coordinates)], dtype=float)
+                        rows, cols = rasterio.transform.rowcol(
+                            sample_transform, [point[0] for point in coordinates],
+                            [point[1] for point in coordinates])
+                        values = np.asarray([
+                            raster[row, col]
+                            if 0 <= row < raster.shape[0] and 0 <= col < raster.shape[1]
+                            else 0 for row, col in zip(rows, cols)
+                        ], dtype=float)
                         valid = np.isfinite(values) & (values > 0)
                         if valid.any():
                             # RTC assets are normally linear power; normalize to dB.
@@ -560,6 +588,9 @@ class Sentinel1RtcSource:
             for segment_id in samples:
                 if samples[segment_id]["vv"] and item.datetime:
                     samples[segment_id]["dates"].append(item.datetime.isoformat())
+            if progress:
+                progress(f"acquiring_sentinel_1_rtc_{item_index}_of_{len(items)}",
+                         min(40, 36 + round(4 * item_index / len(items))))
         output: dict[str, RadarFeatures] = {}
         for segment in segment_list:
             value = samples[segment.segment_id]

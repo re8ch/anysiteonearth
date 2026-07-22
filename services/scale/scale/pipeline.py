@@ -121,7 +121,7 @@ class ScalePipeline:
         progress("acquiring_sentinel_1_rtc", 36)
         try:
             radar = self.sentinel1.sample(
-                bbox, segments, request.time_window.start, request.time_window.end)
+                bbox, segments, request.time_window.start, request.time_window.end, progress)
         except Exception as error:
             source_error = error if isinstance(error, SourceError) else SourceError(
                 "SENTINEL1_UNAVAILABLE", str(error), True)
