@@ -52,6 +52,16 @@ NEXT_PUBLIC_BRAND_ASSETS_BASE_URL=https://zh-brand-assets.re8ch.com
 本仓库保留了原始页面源码（`src/`）与静态交付产物（`dist/`）：
 - `src/`: Next.js 源码（交互地图、地形生成、3D 渲染）
 - `dist/`: 部署到 RE8CH 子站的静态文件
+- `services/scale/`: Scale v1 FastAPI + PostGIS 推理服务；`/scale/` 为 RoveMap 杨市镇演示
+
+## Scale v1
+
+Scale v1 使用 OpenStreetMap 已知道路与免费的 Sentinel-2 L2A 数据，为杨市镇
+约 24×24 km 试点区生成徒步、Gravel Bike、普通汽车和四驱车适应性评分。
+它明确工作在 10 m 环境分析尺度，不把 Sentinel-2 插值结果表述为窄小路检测。
+
+本地启动方式见 [`services/scale/README.md`](services/scale/README.md)；前端通过
+`NEXT_PUBLIC_SCALE_API_BASE` 指向 Scale API。
 
 ## Product Site Design Compliance
 
