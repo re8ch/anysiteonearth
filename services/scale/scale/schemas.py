@@ -175,3 +175,53 @@ class ModelInfo(BaseModel):
     training_data_version: str
     applicable_region: str
     limitations: list[str]
+
+
+class TwinScenario(str, Enum):
+    clear = "clear"
+    after_rain = "after_rain"
+    mist = "mist"
+
+
+class TwinCamera(str, Enum):
+    aerial = "aerial"
+    follow = "follow"
+
+
+class TwinCreate(BaseModel):
+    analysis_id: UUID
+    route_id: str | None = None
+    route_geometry: dict[str, Any] | None = None
+    departure_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    average_speed_kmh: float = Field(default=14, ge=4, le=45)
+    scenario: TwinScenario = TwinScenario.clear
+    camera_modes: list[TwinCamera] = Field(
+        default_factory=lambda: [TwinCamera.aerial, TwinCamera.follow], min_length=1
+    )
+    export_1080p: bool = True
+
+    @model_validator(mode="after")
+    def route_source(self) -> "TwinCreate":
+        if bool(self.route_id) == bool(self.route_geometry):
+            raise ValueError("exactly one of route_id or route_geometry is required")
+        if self.route_geometry:
+            if self.route_geometry.get("type") != "LineString":
+                raise ValueError("route_geometry must be a GeoJSON LineString")
+            coordinates = self.route_geometry.get("coordinates") or []
+            if not 2 <= len(coordinates) <= 20_000:
+                raise ValueError("route_geometry must contain 2 to 20,000 points")
+        return self
+
+
+class TwinAccepted(BaseModel):
+    twin_id: UUID
+    status: AnalysisStatus
+    stage: str
+
+
+class TwinView(TwinAccepted):
+    progress: int = Field(ge=0, le=100)
+    created_at: datetime
+    updated_at: datetime
+    error: ErrorBody | None = None
+    result: dict[str, Any] | None = None

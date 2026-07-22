@@ -723,6 +723,37 @@ class CopernicusDemSource:
             for dataset in datasets:
                 dataset.close()
 
+    def elevation_profile(self, bbox: BBox,
+                          points: list[tuple[float, float]]) -> list[float | None]:
+        """Sample absolute GLO-30 elevation for a route twin timeline."""
+        try:
+            import planetary_computer
+            import rasterio
+            from pystac_client import Client
+        except ImportError as error:
+            raise SourceError("DEM_DEPENDENCY_MISSING", str(error), False) from error
+        items = list(Client.open(self.stac_url).search(
+            collections=["cop-dem-glo-30"],
+            bbox=[bbox.west, bbox.south, bbox.east, bbox.north], max_items=4,
+        ).items())
+        datasets = [rasterio.open(planetary_computer.sign(item).assets["data"].href)
+                    for item in items if "data" in item.assets]
+        try:
+            output: list[float | None] = []
+            for lng, lat in points:
+                elevation = None
+                for dataset in datasets:
+                    project = Transformer.from_crs("EPSG:4326", dataset.crs, always_xy=True)
+                    value = next(dataset.sample([project.transform(lng, lat)]))[0]
+                    if np.isfinite(value) and value > -1000:
+                        elevation = float(value)
+                        break
+                output.append(elevation)
+            return output
+        finally:
+            for dataset in datasets:
+                dataset.close()
+
     def hydrology(self, bbox: BBox, segments: Iterable[RoadSegment]) -> dict[str, HydrologyFeatures]:
         """Derive drainage proxies from a hydrologically conditioned local DEM window.
 

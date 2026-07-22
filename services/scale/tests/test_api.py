@@ -3,6 +3,7 @@ from datetime import date
 from fastapi.testclient import TestClient
 
 from scale.api import app, get_repository
+from scale.schemas import AnalysisCreate
 from scale.storage import MemoryRepository
 
 
@@ -35,3 +36,26 @@ def test_models_describe_limitations():
     assert models.status_code == 200
     assert models.json()[0]["version"] == "scale_v1.2"
     assert models.json()[0]["limitations"]
+
+
+def test_trip_twin_lifecycle_requires_completed_analysis():
+    repository = MemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repository
+    analysis = repository.create_analysis(AnalysisCreate.model_validate(request_body()))
+    body = {
+        "analysis_id": str(analysis["analysis_id"]),
+        "route_geometry": {"type": "LineString", "coordinates": [
+            [111.78, 27.59], [111.825, 27.61], [111.87, 27.59]]},
+        "scenario": "mist", "camera_modes": ["aerial", "follow"],
+    }
+    with TestClient(app) as client:
+        pending = client.post("/v1/twins", json=body)
+        assert pending.status_code == 409
+        repository.update_analysis(analysis["analysis_id"], status="completed", result={})
+        accepted = client.post("/v1/twins", json=body)
+        assert accepted.status_code == 202
+        twin_id = accepted.json()["twin_id"]
+        status = client.get(f"/v1/twins/{twin_id}")
+        assert status.status_code == 200
+        assert status.json()["status"] == "queued"
+    app.dependency_overrides.clear()

@@ -7,7 +7,7 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from .config import settings
 from .geo import validate_bbox_size
@@ -21,6 +21,9 @@ from .schemas import (
     GpsTraceAccepted,
     GpsTraceCreate,
     ModelInfo,
+    TwinAccepted,
+    TwinCreate,
+    TwinView,
 )
 from .tiles import TileRenderer
 from .verification import (
@@ -50,7 +53,7 @@ async def lifespan(_: FastAPI):
     stop_worker.set()
 
 
-app = FastAPI(title="Anysite Scale", version="1.2.2", lifespan=lifespan)
+app = FastAPI(title="Anysite Scale", version="1.3.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -116,7 +119,7 @@ async def upstream_storage_error_handler(_: Request, error: httpx.HTTPError) -> 
 
 @app.get("/healthz")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "1.2.2"}
+    return {"status": "ok", "version": "1.3.0"}
 
 
 @app.post("/v1/analyses", response_model=AnalysisAccepted, status_code=202)
@@ -145,6 +148,68 @@ def require_analysis(analysis_id: UUID, storage: Repository) -> dict[str, Any]:
             },
         )
     return item
+
+
+def require_twin(twin_id: UUID, storage: Repository) -> dict[str, Any]:
+    item = storage.get_twin(twin_id)
+    if item is None:
+        raise HTTPException(404, detail={"code": "TWIN_NOT_FOUND",
+            "message": "Trip twin does not exist", "retryable": False, "details": {}})
+    return item
+
+
+@app.post("/v1/twins", response_model=TwinAccepted, status_code=202)
+def create_twin(request: TwinCreate,
+                storage: Repository = Depends(get_repository)) -> TwinAccepted:
+    analysis = require_analysis(request.analysis_id, storage)
+    if analysis["status"] != AnalysisStatus.completed.value:
+        raise HTTPException(409, detail={"code": "TWIN_ANALYSIS_NOT_READY",
+            "message": f"Source analysis is {analysis['status']}", "retryable": True,
+            "details": {"analysis_id": str(request.analysis_id)}})
+    item = storage.create_twin(request)
+    return TwinAccepted(twin_id=item["twin_id"], status=AnalysisStatus(item["status"]),
+                        stage=item["stage"])
+
+
+@app.get("/v1/twins/{twin_id}", response_model=TwinView)
+def get_twin(twin_id: UUID, storage: Repository = Depends(get_repository)) -> TwinView:
+    return TwinView.model_validate(require_twin(twin_id, storage))
+
+
+@app.get("/v1/twins/{twin_id}/result")
+def get_twin_result(twin_id: UUID,
+                    storage: Repository = Depends(get_repository)) -> dict[str, Any]:
+    item = require_twin(twin_id, storage)
+    if item["status"] != AnalysisStatus.completed.value:
+        raise HTTPException(409, detail={"code": "TWIN_NOT_READY",
+            "message": f"Trip twin is {item['status']}",
+            "retryable": item["status"] != AnalysisStatus.failed.value,
+            "details": {"status": item["status"]}})
+    return item["result"]
+
+
+@app.get("/v1/twins/{twin_id}/assets/{asset_name}")
+def get_twin_asset(twin_id: UUID, asset_name: str,
+                   storage: Repository = Depends(get_repository)) -> FileResponse:
+    item = require_twin(twin_id, storage)
+    if item["status"] != AnalysisStatus.completed.value:
+        raise HTTPException(409, detail={"code": "TWIN_NOT_READY",
+            "message": f"Trip twin is {item['status']}", "retryable": True, "details": {}})
+    allowed = asset_name == "scene.json" or (
+        asset_name.startswith(("preview-720p-", "export-1080p-"))
+        and asset_name.endswith(".mp4")
+        and asset_name.removesuffix(".mp4").rsplit("-", 1)[-1] in {"aerial", "follow"})
+    if not allowed:
+        raise HTTPException(404, detail={"code": "TWIN_ASSET_NOT_FOUND",
+            "message": "Twin asset does not exist", "retryable": False, "details": {}})
+    path = settings.twin_asset_dir / str(twin_id) / asset_name
+    if not path.exists():
+        raise HTTPException(404, detail={"code": "TWIN_ASSET_NOT_FOUND",
+            "message": "Twin asset is not available", "retryable": False, "details": {}})
+    return FileResponse(path, media_type=("application/json" if asset_name == "scene.json"
+                                          else "video/mp4"), filename=asset_name,
+                        content_disposition_type=("attachment" if asset_name == "scene.json"
+                                                  else "inline"))
 
 
 @app.get("/v1/analyses/{analysis_id}", response_model=AnalysisView)

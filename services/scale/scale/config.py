@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = 45.0
     max_segments: int = 2500
     high_resolution_cog_urls: str = ""
+    twin_asset_dir: Path = Path("/var/cache/scale/twins")
+    twin_sample_spacing_m: float = 75
+    twin_preview_seconds: int = 18
 
     @property
     def allowed_origins(self) -> list[str]:

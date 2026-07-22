@@ -13,7 +13,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 import httpx
 
-from .schemas import AnalysisCreate, AnalysisStatus
+from .schemas import AnalysisCreate, AnalysisStatus, TwinCreate
 
 
 def now() -> datetime:
@@ -32,6 +32,10 @@ class Repository(Protocol):
     def save_layers(self, analysis_id: UUID, layers: dict[str, Any]) -> None: ...
     def get_layer(self, analysis_id: UUID, layer_name: str) -> dict[str, Any] | None: ...
     def get_layers(self, analysis_id: UUID) -> dict[str, Any]: ...
+    def create_twin(self, request: TwinCreate) -> dict[str, Any]: ...
+    def get_twin(self, twin_id: UUID) -> dict[str, Any] | None: ...
+    def claim_twin(self) -> dict[str, Any] | None: ...
+    def update_twin(self, twin_id: UUID, **changes: Any) -> None: ...
 
 
 class MemoryRepository:
@@ -40,6 +44,7 @@ class MemoryRepository:
         self.feedback: dict[UUID, dict[str, Any]] = {}
         self.gps_traces: dict[UUID, dict[str, Any]] = {}
         self.layers: dict[tuple[UUID, str], dict[str, Any]] = {}
+        self.twins: dict[UUID, dict[str, Any]] = {}
         self.lock = threading.Lock()
 
     def create_analysis(self, request: AnalysisCreate) -> dict[str, Any]:
@@ -117,6 +122,32 @@ class MemoryRepository:
     def get_layers(self, analysis_id: UUID) -> dict[str, Any]:
         return {name: deepcopy(value) for (owner, name), value in self.layers.items()
                 if owner == analysis_id}
+
+    def create_twin(self, request: TwinCreate) -> dict[str, Any]:
+        twin_id, stamp = uuid4(), now()
+        item = {"twin_id": twin_id, "analysis_id": request.analysis_id,
+                "request": request.model_dump(mode="json"), "status": "queued",
+                "stage": "waiting_for_worker", "progress": 0, "created_at": stamp,
+                "updated_at": stamp, "error": None, "result": None}
+        with self.lock:
+            self.twins[twin_id] = item
+        return deepcopy(item)
+
+    def get_twin(self, twin_id: UUID) -> dict[str, Any] | None:
+        with self.lock:
+            item = self.twins.get(twin_id)
+            return deepcopy(item) if item else None
+
+    def claim_twin(self) -> dict[str, Any] | None:
+        with self.lock:
+            item = next((value for value in self.twins.values() if value["status"] == "queued"), None)
+            if item:
+                item.update(status="acquiring", stage="resolving_route", progress=5, updated_at=now())
+            return deepcopy(item) if item else None
+
+    def update_twin(self, twin_id: UUID, **changes: Any) -> None:
+        with self.lock:
+            self.twins[twin_id].update(changes, updated_at=now())
 
 
 class PostgresRepository:
@@ -256,6 +287,49 @@ class PostgresRepository:
             rows = connection.execute("SELECT layer_name,payload FROM scale.analysis_layers WHERE analysis_id=%s",
                                       (analysis_id,)).fetchall()
         return {row["layer_name"]: row["payload"] for row in rows}
+
+    def create_twin(self, request: TwinCreate) -> dict[str, Any]:
+        twin_id = uuid4()
+        with self.pool.connection() as connection:
+            return connection.execute("""
+                INSERT INTO scale.trip_twins(id,analysis_id,request,status,stage,progress)
+                VALUES (%s,%s,%s::jsonb,'queued','waiting_for_worker',0)
+                RETURNING id AS twin_id,analysis_id,request,status,stage,progress,
+                          created_at,updated_at,error,result
+            """, (twin_id, request.analysis_id,
+                    json.dumps(request.model_dump(mode="json")))).fetchone()
+
+    def get_twin(self, twin_id: UUID) -> dict[str, Any] | None:
+        with self.pool.connection() as connection:
+            return connection.execute("""
+                SELECT id AS twin_id,analysis_id,request,status,stage,progress,
+                       created_at,updated_at,error,result
+                FROM scale.trip_twins WHERE id=%s
+            """, (twin_id,)).fetchone()
+
+    def claim_twin(self) -> dict[str, Any] | None:
+        with self.pool.connection() as connection:
+            with connection.transaction():
+                row = connection.execute("SELECT * FROM scale.claim_trip_twin()").fetchone()
+                if row:
+                    row["twin_id"] = row.pop("id")
+                return row
+
+    def update_twin(self, twin_id: UUID, **changes: Any) -> None:
+        allowed = {"status", "stage", "progress", "error", "result"}
+        updates = {key: value for key, value in changes.items() if key in allowed}
+        assignments, values = [], []
+        for key, value in updates.items():
+            if key in {"error", "result"}:
+                assignments.append(f"{key}=%s::jsonb")
+                values.append(json.dumps(value) if value is not None else None)
+            else:
+                assignments.append(f"{key}=%s")
+                values.append(value)
+        assignments.append("updated_at=now()")
+        values.append(twin_id)
+        with self.pool.connection() as connection:
+            connection.execute(f"UPDATE scale.trip_twins SET {', '.join(assignments)} WHERE id=%s", values)
 
 
 class PostgrestRepository:
@@ -449,6 +523,44 @@ class PostgrestRepository:
             params={"analysis_id": f"eq.{analysis_id}", "select": "layer_name,payload"},
         )
         return {row["layer_name"]: row["payload"] for row in response.json()}
+
+    def create_twin(self, request: TwinCreate) -> dict[str, Any]:
+        twin_id = uuid4()
+        response = self.client.post(f"{self.base_url}/trip_twins",
+            headers=self._headers("return=representation"), json={
+                "id": str(twin_id), "analysis_id": str(request.analysis_id),
+                "request": request.model_dump(mode="json"), "status": "queued",
+                "stage": "waiting_for_worker", "progress": 0})
+        response.raise_for_status()
+        row = response.json()[0]
+        row["twin_id"] = row.pop("id")
+        return row
+
+    def get_twin(self, twin_id: UUID) -> dict[str, Any] | None:
+        response = self._request_with_retry("GET", f"{self.base_url}/trip_twins",
+            headers=self._headers(), params={"id": f"eq.{twin_id}", "limit": "1"})
+        rows = response.json()
+        if not rows:
+            return None
+        rows[0]["twin_id"] = rows[0].pop("id")
+        return rows[0]
+
+    def claim_twin(self) -> dict[str, Any] | None:
+        response = self.client.post(f"{self.base_url}/rpc/claim_trip_twin",
+                                    headers=self._headers(), json={})
+        response.raise_for_status()
+        rows = response.json()
+        if not rows:
+            return None
+        rows[0]["twin_id"] = rows[0].pop("id")
+        return rows[0]
+
+    def update_twin(self, twin_id: UUID, **changes: Any) -> None:
+        allowed = {"status", "stage", "progress", "error", "result"}
+        payload = {key: value for key, value in changes.items() if key in allowed}
+        payload["updated_at"] = now().isoformat()
+        self._request_with_retry("PATCH", f"{self.base_url}/trip_twins",
+            headers=self._headers(), params={"id": f"eq.{twin_id}"}, json=payload)
 
 
 def create_repository(

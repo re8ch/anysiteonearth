@@ -50,6 +50,8 @@ class TileRenderer:
             return path.read_bytes()
         if layer == "seasonal_spectral":
             rgb = self._ndvi((west, south, east, north), season, start, end)
+        elif layer == "satellite":
+            rgb = self._satellite((west, south, east, north), season, start, end)
         elif layer == "landcover":
             rgb = self._landcover((west, south, east, north))
         elif layer == "terrain":
@@ -87,6 +89,23 @@ class TileRenderer:
             (52 * (1 - t) + 70 * t),
             np.where((red + nir) > 0, 180, 0),
         ]).astype("uint8")
+
+    def _satellite(self, bounds: tuple[float, ...], season: str,
+                   start: date, end: date) -> np.ndarray:
+        import planetary_computer
+        items = self._items("sentinel-2-l2a", bounds, datetime=f"{start}/{end}",
+                            query={"eo:cloud_cover": {"lt": 70}}, max_items=80)
+        seasonal = [item for item in items if item.datetime and item.datetime.month in SEASON_MONTHS[season]]
+        if not seasonal:
+            raise SourceError("SEASON_EMPTY", f"No Sentinel-2 scene is available for {season}", False)
+        item = planetary_computer.sign(min(
+            seasonal, key=lambda value: float(value.properties.get("eo:cloud_cover", 100))))
+        bands = [read_asset(item.assets[key].href, bounds) for key in ("B04", "B03", "B02")]
+        rgb = np.stack(bands)
+        # Sentinel-2 L2A reflectance is scaled by 10000; use a stable visual stretch.
+        rgb = np.clip((rgb - 250) / 2750, 0, 1) ** 0.82
+        alpha = np.where(np.sum(rgb, axis=0) > 0, 255, 0)[None, ...]
+        return np.concatenate([(rgb * 255).astype("uint8"), alpha.astype("uint8")])
 
     def _landcover(self, bounds: tuple[float, ...]) -> np.ndarray:
         import planetary_computer
