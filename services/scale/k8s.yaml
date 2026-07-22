@@ -23,16 +23,14 @@ spec:
       labels: {app: scale-api}
     spec:
       serviceAccountName: anysite-runtime
-      imagePullSecrets:
-        - name: harbor-anysite-admin
       nodeSelector:
         kubernetes.io/hostname: r640
       tolerations:
         - {key: dedicated, operator: Equal, value: pg-re8ch, effect: NoSchedule}
       containers:
         - name: api
-          image: registry.re8ch.com/anysite/scale:1.3.1-20260722.2
-          imagePullPolicy: IfNotPresent
+          image: registry.re8ch.com/anysite/scale:1.3.1-20260722
+          imagePullPolicy: Never
           args: [uvicorn, scale.api:app, --host, 0.0.0.0, --port, "8000"]
           ports:
             - {name: http, containerPort: 8000}
@@ -73,16 +71,14 @@ spec:
       labels: {app: scale-worker}
     spec:
       serviceAccountName: anysite-runtime
-      imagePullSecrets:
-        - name: harbor-anysite-admin
       nodeSelector:
         kubernetes.io/hostname: r640
       tolerations:
         - {key: dedicated, operator: Equal, value: pg-re8ch, effect: NoSchedule}
       containers:
         - name: worker
-          image: registry.re8ch.com/anysite/scale:1.3.1-20260722.2
-          imagePullPolicy: IfNotPresent
+          image: registry.re8ch.com/anysite/scale:1.3.1-20260722
+          imagePullPolicy: Never
           args: [python, -m, scale.worker]
           env:
             - name: SCALE_DATABASE_URL
