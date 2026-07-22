@@ -41,7 +41,7 @@ spec:
               valueFrom:
                 secretKeyRef: {name: anysite-db-credentials, key: PGRST_JWT_SECRET}
             - {name: SCALE_EMBEDDED_WORKER, value: "false"}
-            - {name: SCALE_CORS_ORIGINS, value: "https://anysiteonearth.re8ch.com,https://anysiteonearth.pages.dev,https://agent-scale-v1-1.anysiteonearth.pages.dev,http://localhost:3000"}
+            - {name: SCALE_CORS_ORIGINS, value: "https://anysiteonearth.re8ch.com,https://anysiteonearth.pages.dev,https://agent-scale-v1-1.anysiteonearth.pages.dev,https://agent-scale-v1-1-ek2j.anysiteonearth.pages.dev,http://localhost:3000"}
             - {name: SCALE_SENTINEL1_COLLECTION, value: "sentinel-1-rtc"}
             - {name: SCALE_ERA5_URL, value: "https://archive-api.open-meteo.com/v1/archive"}
           volumeMounts:
