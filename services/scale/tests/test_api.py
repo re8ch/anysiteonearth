@@ -58,4 +58,5 @@ def test_trip_twin_lifecycle_requires_completed_analysis():
         status = client.get(f"/v1/twins/{twin_id}")
         assert status.status_code == 200
         assert status.json()["status"] == "queued"
+        assert status.json()["result"] is None
     app.dependency_overrides.clear()

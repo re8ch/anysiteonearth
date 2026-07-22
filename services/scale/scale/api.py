@@ -173,7 +173,9 @@ def create_twin(request: TwinCreate,
 
 @app.get("/v1/twins/{twin_id}", response_model=TwinView)
 def get_twin(twin_id: UUID, storage: Repository = Depends(get_repository)) -> TwinView:
-    return TwinView.model_validate(require_twin(twin_id, storage))
+    item = require_twin(twin_id, storage)
+    # Polling stays small; the scene manifest has its own result endpoint.
+    return TwinView.model_validate({**item, "result": None})
 
 
 @app.get("/v1/twins/{twin_id}/result")

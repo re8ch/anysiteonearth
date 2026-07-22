@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 from pyproj import Transformer
 from shapely.geometry import LineString, Point, mapping, shape
 from shapely.ops import transform
+from shapely.strtree import STRtree
 
 from .config import Settings
 from .schemas import BBox, TwinCreate
@@ -54,6 +55,8 @@ class TwinCompiler:
         road_features = layers.get("roads", {}).get("features", [])
         landcover = layers.get("landcover", {}).get("features", [])
         places = layers.get("places", {}).get("features", [])
+        road_index = FeatureIndex(road_features, metric=True)
+        landcover_index = FeatureIndex(landcover)
 
         progress("compiling_temporal_state", 48)
         total_seconds = length_km / request.average_speed_kmh * 3600
@@ -61,8 +64,10 @@ class TwinCompiler:
         for index, ((lng, lat), elevation) in enumerate(zip(positions, elevations)):
             fraction = index / max(len(positions) - 1, 1)
             eta = request.departure_at + timedelta(seconds=total_seconds * fraction)
-            nearest_road = nearest_feature((lng, lat), road_features)
-            cover = covering_landcover((lng, lat), landcover)
+            nearest_road = road_index.nearest((lng, lat))
+            cover_feature = landcover_index.covering((lng, lat))
+            cover = (str(cover_feature.get("properties", {}).get("landcover_class", "unknown"))
+                     if cover_feature else "unknown")
             road_props = nearest_road.get("properties", {}) if nearest_road else {}
             state = scenario_state(request.scenario.value, fraction,
                                    float(road_props.get("wetness_risk", 0.35)))
@@ -175,6 +180,31 @@ def nearest_feature(point: tuple[float, float], features: list[dict[str, Any]]) 
     return min(features, key=lambda item: metric.distance(transform(TO_METRIC, shape(item["geometry"]))))
 
 
+class FeatureIndex:
+    """Prepare geometry once instead of reprojecting every feature for every sample."""
+
+    def __init__(self, features: list[dict[str, Any]], metric: bool = False) -> None:
+        self.features = features
+        self.metric = metric
+        self.geometries = [transform(TO_METRIC, shape(item["geometry"])) if metric
+                           else shape(item["geometry"]) for item in features]
+        self.tree = STRtree(self.geometries) if self.geometries else None
+
+    def nearest(self, point: tuple[float, float]) -> dict[str, Any] | None:
+        if self.tree is None:
+            return None
+        target = transform(TO_METRIC, Point(point)) if self.metric else Point(point)
+        matches = self.tree.query_nearest(target)
+        return self.features[int(matches[0])]
+
+    def covering(self, point: tuple[float, float]) -> dict[str, Any] | None:
+        if self.tree is None:
+            return None
+        target = transform(TO_METRIC, Point(point)) if self.metric else Point(point)
+        matches = self.tree.query(target, predicate="within")
+        return self.features[int(matches[0])] if len(matches) else None
+
+
 def covering_landcover(point: tuple[float, float], features: list[dict[str, Any]]) -> str:
     target = Point(point)
     for feature in features:
@@ -222,8 +252,9 @@ def compile_semantic_objects(places: list[dict[str, Any]],
                         "geometry": feature.get("geometry"), "provenance": "observed_osm"})
     for feature in landcover[:500]:
         kind = feature.get("properties", {}).get("landcover_class", "unknown")
+        geometry = shape(feature["geometry"]).simplify(0.00005, preserve_topology=True)
         objects.append({"id": feature.get("id"), "kind": f"procedural_{kind}",
-                        "geometry": feature.get("geometry"),
+                        "geometry": mapping(geometry),
                         "provenance": "simulated_visualization",
                         "source_class": kind})
     return objects
