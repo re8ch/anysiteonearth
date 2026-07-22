@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+import hashlib
 import json
 import math
 from pathlib import Path
+import shutil
 import subprocess
 from typing import Any, Callable
 from uuid import UUID
@@ -263,10 +265,15 @@ def compile_semantic_objects(places: list[dict[str, Any]],
         kind = feature.get("properties", {}).get("feature_kind")
         objects.append({"id": feature.get("id"), "kind": kind,
                         "geometry": feature.get("geometry"), "provenance": "observed_osm"})
+    built_up_index = 0
     for feature in landcover[:500]:
         kind = feature.get("properties", {}).get("landcover_class", "unknown")
         geometry = shape(feature["geometry"]).simplify(0.00005, preserve_topology=True)
-        objects.append({"id": feature.get("id"), "kind": f"procedural_{kind}",
+        visual_kind = kind
+        if kind == "built_up":
+            visual_kind = "village" if built_up_index % 5 == 0 else kind
+            built_up_index += 1
+        objects.append({"id": feature.get("id"), "kind": f"procedural_{visual_kind}",
                         "geometry": mapping(geometry),
                         "provenance": "simulated_visualization",
                         "source_class": kind})
@@ -382,6 +389,14 @@ def build_geographic_backdrop(renderer: TileRenderer, manifest: dict[str, Any],
     bounds = tuple(manifest["extent"][key] for key in ("west", "south", "east", "north"))
     request = analysis.get("request", {})
     window = request.get("time_window", {})
+    cache_key = hashlib.sha256(json.dumps({
+        "version": "cloud_median_soft_semantics_v1", "bounds": bounds,
+        "analysis_id": manifest.get("analysis_id"),
+    }, sort_keys=True).encode()).hexdigest()
+    cache_path = renderer.cache_dir.parent / "twin_backdrops" / f"{cache_key}.png"
+    if cache_path.exists():
+        shutil.copyfile(cache_path, output)
+        return None
     try:
         start = date.fromisoformat(str(window.get("start", "2025-01-01"))[:10])
         end = date.fromisoformat(str(window.get("end", datetime.now(timezone.utc).date()))[:10])
@@ -393,6 +408,8 @@ def build_geographic_backdrop(renderer: TileRenderer, manifest: dict[str, Any],
         image = ImageEnhance.Color(image).enhance(1.08).resize((1024, 1024), Image.Resampling.LANCZOS)
         draw_geographic_objects(image, manifest.get("objects", []), bounds)
         image.save(output, "PNG", optimize=True)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(output, cache_path)
         return None
     except Exception as error:  # upstream imagery failure must not destroy the whole twin
         return f"Real backdrop unavailable: {type(error).__name__}: {error}"
@@ -422,6 +439,7 @@ def draw_geographic_objects(image: Image.Image, objects: list[dict[str, Any]],
                 "tree_cover": (34, 118, 70, 15), "cropland": (226, 185, 66, 14),
                 "grassland": (139, 181, 76, 12), "built_up": (214, 95, 75, 13),
                 "water": (38, 135, 200, 22), "shrubland": (111, 153, 71, 12),
+                "village": (205, 116, 83, 18),
             }.get(cover)
             parts = geometry.get("coordinates", [])
             if semantic and geometry.get("type") == "Polygon" and parts:

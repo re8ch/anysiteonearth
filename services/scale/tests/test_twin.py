@@ -100,6 +100,17 @@ def test_semantic_scene_distinguishes_osm_roads_from_procedural_cover():
         ("procedural_cropland", "simulated_visualization"), ("road", "observed_osm")]
 
 
+def test_semantic_scene_sparsely_synthesizes_villages_from_built_cover():
+    covers = [{"id": f"built-{index}", "geometry": {"type": "Polygon", "coordinates": [[
+        [111.81, 27.58], [111.82, 27.58], [111.82, 27.59], [111.81, 27.58]]]},
+        "properties": {"landcover_class": "built_up"}} for index in range(6)]
+    objects = compile_semantic_objects([], covers)
+    assert [item["kind"] for item in objects] == [
+        "procedural_village", "procedural_built_up", "procedural_built_up",
+        "procedural_built_up", "procedural_built_up", "procedural_village"]
+    assert all(item["source_class"] == "built_up" for item in objects)
+
+
 def test_backend_renderer_writes_playable_mp4(tmp_path):
     route = [[111.82, 27.59, 180], [111.83, 27.60, 200]]
     frames = [{"position": point, "fraction": index, "eta": "2026-07-22T07:30:00Z",
