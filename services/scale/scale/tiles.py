@@ -5,6 +5,7 @@ import io
 import math
 from pathlib import Path
 from typing import Any
+import warnings
 
 import numpy as np
 from pyproj import Transformer
@@ -95,13 +96,33 @@ class TileRenderer:
         import planetary_computer
         items = self._items("sentinel-2-l2a", bounds, datetime=f"{start}/{end}",
                             query={"eo:cloud_cover": {"lt": 70}}, max_items=80)
-        seasonal = [item for item in items if item.datetime and item.datetime.month in SEASON_MONTHS[season]]
+        seasonal = (items if season == "annual" else
+                    [item for item in items if item.datetime and item.datetime.month in SEASON_MONTHS[season]])
         if not seasonal:
             raise SourceError("SEASON_EMPTY", f"No Sentinel-2 scene is available for {season}", False)
-        item = planetary_computer.sign(min(
-            seasonal, key=lambda value: float(value.properties.get("eo:cloud_cover", 100))))
-        bands = [read_asset(item.assets[key].href, bounds) for key in ("B04", "B03", "B02")]
-        rgb = np.stack(bands)
+        # Scene-level cloud cover is insufficient for a small route AOI. Build a
+        # local SCL-masked median from several dates so a single white cloud does
+        # not become the digital twin's ground texture.
+        selected = sorted(seasonal, key=lambda value: float(
+                            value.properties.get("eo:cloud_cover", 100)))[:8]
+        samples: list[np.ndarray] = []
+        fallbacks: list[np.ndarray] = []
+        for candidate in selected:
+            item = planetary_computer.sign(candidate)
+            sample = np.stack([read_asset(item.assets[key].href, bounds)
+                               for key in ("B04", "B03", "B02")])
+            fallbacks.append(sample)
+            if "SCL" in item.assets:
+                scl = read_asset(item.assets["SCL"].href, bounds, nearest=True).astype("uint8")
+                valid = np.isin(scl, [2, 4, 5, 6, 7]) & np.all(sample > 0, axis=0)
+                sample = np.where(valid[None, ...], sample, np.nan)
+            samples.append(sample)
+        stack = np.stack(samples)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            rgb = np.nanmedian(stack, axis=0)
+        fallback = np.median(np.stack(fallbacks), axis=0)
+        rgb = np.where(np.isfinite(rgb), rgb, fallback)
         # Sentinel-2 L2A reflectance is scaled by 10000; use a stable visual stretch.
         rgb = np.clip((rgb - 250) / 2750, 0, 1) ** 0.82
         alpha = np.where(np.sum(rgb, axis=0) > 0, 255, 0)[None, ...]

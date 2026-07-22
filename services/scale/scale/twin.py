@@ -379,7 +379,7 @@ def build_geographic_backdrop(renderer: TileRenderer, manifest: dict[str, Any],
     try:
         start = date.fromisoformat(str(window.get("start", "2025-01-01"))[:10])
         end = date.fromisoformat(str(window.get("end", datetime.now(timezone.utc).date()))[:10])
-        satellite = renderer._satellite(bounds, "summer", start, end)
+        satellite = renderer._satellite(bounds, "annual", start, end)
         terrain = renderer._terrain(bounds)
         rgb = Image.fromarray(satellite[:3].transpose(1, 2, 0), "RGB")
         hillshade = Image.fromarray(terrain[:3].transpose(1, 2, 0), "RGB")
