@@ -12,3 +12,8 @@ tsconfig.tsbuildinfo
 dist/
 bin/
 package-lock.json
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+*.py[cod]

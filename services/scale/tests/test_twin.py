@@ -1,0 +1,134 @@
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+from PIL import Image
+
+from scale.config import Settings
+from scale.schemas import TwinCreate
+from scale.twin import (FeatureIndex, TwinCompiler, TwinError, apply_scenario_atmosphere,
+                        compile_semantic_objects, fill_elevations, scenario_state)
+from scale.twin import render_route_video
+
+
+def route_geometry():
+    # About 9 km at Yangshi latitude.
+    return {"type": "LineString", "coordinates": [
+        [111.78, 27.59], [111.825, 27.61], [111.87, 27.59],
+    ]}
+
+
+def request(analysis_id):
+    return TwinCreate(
+        analysis_id=analysis_id,
+        route_geometry=route_geometry(),
+        departure_at=datetime(2026, 7, 22, 7, 30, tzinfo=timezone.utc),
+        average_speed_kmh=15,
+        scenario="after_rain",
+        camera_modes=["aerial", "follow"],
+    )
+
+
+def test_compiler_builds_four_dimensional_scene_and_truth_labels(tmp_path, monkeypatch):
+    settings = Settings(cache_dir=tmp_path, twin_asset_dir=tmp_path / "twins",
+                        twin_sample_spacing_m=500, twin_preview_seconds=1)
+    compiler = TwinCompiler(settings)
+    monkeypatch.setattr(compiler.dem, "elevation_profile",
+                        lambda _bbox, points: [180 + index * 2 for index, _ in enumerate(points)])
+    rendered = []
+    def fake_render(_manifest, output, width, height, *_args):
+        output.write_bytes(b"video")
+        rendered.append((width, height))
+    monkeypatch.setattr("scale.twin.render_route_video", fake_render)
+    monkeypatch.setattr("scale.twin.build_geographic_backdrop", lambda *_args: None)
+    result = compiler.compile(uuid4(), request(uuid4()), {"result": {"metadata": {
+        "data_coverage": {"road_segments": 20}}}}, {
+            "roads": {"features": []}, "places": {"features": []},
+            "landcover": {"features": []}, "scenic_loops": {"features": []},
+        }, lambda *_args: None)
+    manifest = result["manifest"]
+    assert 8 <= manifest["route"]["properties"]["distance_km"] <= 25
+    assert manifest["keyframes"][0]["position"][2] == 180
+    assert manifest["keyframes"][0]["eta"] < manifest["keyframes"][-1]["eta"]
+    assert manifest["keyframes"][0]["provenance"]["vegetation_objects"] == "simulated_visualization"
+    assert set(manifest["camera_tracks"]) == {"aerial", "follow"}
+    assert manifest["scenario"] == "after_rain"
+    assert rendered == [(1280, 720), (1280, 720), (1920, 1080), (1920, 1080)]
+
+
+def test_twin_rejects_routes_outside_supported_distance(tmp_path, monkeypatch):
+    settings = Settings(twin_asset_dir=tmp_path / "twins", twin_preview_seconds=1)
+    compiler = TwinCompiler(settings)
+    short = request(uuid4())
+    short.route_geometry = {"type": "LineString", "coordinates": [
+        [111.82, 27.59], [111.821, 27.59]]}
+    with pytest.raises(TwinError, match="between 8 and 25"):
+        compiler.compile(uuid4(), short, {}, {}, lambda *_args: None)
+
+
+def test_scenarios_change_temporal_wetness_and_atmosphere():
+    clear = scenario_state("clear", 0, 0.4)
+    rain = scenario_state("after_rain", 0, 0.4)
+    mist = scenario_state("mist", 0, 0.4)
+    assert rain["wetness"] > clear["wetness"]
+    assert mist["atmosphere"]["fog"] > clear["atmosphere"]["fog"]
+    assert scenario_state("after_rain", 1, 0.4)["wetness"] < rain["wetness"]
+
+
+def test_weather_rendering_visibly_separates_scenarios():
+    source = Image.new("RGB", (24, 24), (80, 150, 90))
+    clear = apply_scenario_atmosphere(source, "clear", scenario_state("clear", 0, 0.4))
+    rain = apply_scenario_atmosphere(source, "after_rain", scenario_state("after_rain", 0, 0.4))
+    mist = apply_scenario_atmosphere(source, "mist", scenario_state("mist", 0, 0.4))
+    assert clear.getpixel((0, 0)) != rain.getpixel((0, 0))
+    assert mist.getpixel((0, 0))[0] > clear.getpixel((0, 0))[0]
+    assert rain.getpixel((0, 0))[1] < clear.getpixel((0, 0))[1]
+
+
+def test_missing_dem_samples_are_deterministically_filled():
+    assert fill_elevations([None, 10, None, 14]) == [10, 10, 12, 14]
+
+
+def test_feature_index_finds_nearest_and_covering_feature():
+    roads = [{"id": "road", "geometry": {"type": "LineString",
+              "coordinates": [[111.82, 27.59], [111.83, 27.59]]}, "properties": {}}]
+    covers = [{"id": "field", "geometry": {"type": "Polygon", "coordinates": [[
+               [111.81, 27.58], [111.84, 27.58], [111.84, 27.61],
+               [111.81, 27.61], [111.81, 27.58]]]}, "properties": {}}]
+    assert FeatureIndex(roads, metric=True).nearest((111.825, 27.592))["id"] == "road"
+    assert FeatureIndex(covers).covering((111.825, 27.592))["id"] == "field"
+
+
+def test_semantic_scene_distinguishes_osm_roads_from_procedural_cover():
+    road = {"id": "r1", "geometry": {"type": "LineString", "coordinates": [
+        [111.82, 27.59], [111.83, 27.60]]}, "properties": {"surface_class": "gravel"}}
+    cover = {"id": "c1", "geometry": {"type": "Polygon", "coordinates": [[
+        [111.81, 27.58], [111.84, 27.58], [111.84, 27.61], [111.81, 27.58]]]},
+        "properties": {"landcover_class": "cropland"}}
+    objects = compile_semantic_objects([], [cover], [road])
+    assert [(item["kind"], item["provenance"]) for item in objects] == [
+        ("procedural_cropland", "simulated_visualization"), ("road", "observed_osm")]
+
+
+def test_semantic_scene_sparsely_synthesizes_villages_from_built_cover():
+    covers = [{"id": f"built-{index}", "geometry": {"type": "Polygon", "coordinates": [[
+        [111.81, 27.58], [111.82, 27.58], [111.82, 27.59], [111.81, 27.58]]]},
+        "properties": {"landcover_class": "built_up"}} for index in range(6)]
+    objects = compile_semantic_objects([], covers)
+    assert [item["kind"] for item in objects] == [
+        "procedural_village", "procedural_built_up", "procedural_built_up",
+        "procedural_built_up", "procedural_built_up", "procedural_village"]
+    assert all(item["source_class"] == "built_up" for item in objects)
+
+
+def test_backend_renderer_writes_playable_mp4(tmp_path):
+    route = [[111.82, 27.59, 180], [111.83, 27.60, 200]]
+    frames = [{"position": point, "fraction": index, "eta": "2026-07-22T07:30:00Z",
+               "surface": "gravel", "wetness": 0.4, "drainage_risk": 0.2}
+              for index, point in enumerate(route)]
+    manifest = {"keyframes": frames, "scenario": "clear", "extent": {
+        "west": 111.81, "south": 27.58, "east": 111.84, "north": 27.61}}
+    output = tmp_path / "preview.mp4"
+    render_route_video(manifest, output, 320, 180, 1, 2)
+    assert output.read_bytes()[4:8] == b"ftyp"
